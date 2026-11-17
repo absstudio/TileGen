@@ -72,7 +72,13 @@ Puis lancez la commande :
 python tilegen.py
 ```
 
-Vous obtenez immédiatement 20 suggestions de noms avec leurs descriptions.
+Une **page d'accueil interactive** s'affiche (inspirée de l'interface d'OpenCode) : logo, menu de navigation et paramètres. Vous choisissez :
+
+1. **Générer des noms** — mode local, aucune clé nécessaire (le programme demande le nombre de noms souhaité) ;
+2. **Générer avec l'IA** — si vous avez configuré une clé API ;
+3. **Configurer l'IA** — clé API, base URL et modèle ;
+4. **Effacer l'historique** — repartir de zéro ;
+`q` pour quitter. Après chaque génération : `Entrée` pour revenir au menu, `e` pour exporter en CSV.
 
 > **Aucune installation supplémentaire n'est nécessaire** : TileGen n'utilise que des outils inclus dans Python. Pas de `pip install` à faire.
 

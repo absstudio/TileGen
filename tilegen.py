@@ -1,18 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-TileGen v3 — Générateur de noms pour catalogue de carreaux céramiques.
+TileGen v3.1 — Générateur de noms pour catalogue de carreaux céramiques.
 
-Nouveautés v3 :
-- Interface terminal inspirée d'OpenCode : boîtes arrondies, couleurs, hiérarchie claire
-- Noms plus explicites : étymologie affichée (le nom indique de quoi il s'inspire)
-- Mode IA (facultatif) : entrez votre clé API pour générer des noms avec un LLM
-  compatible OpenAI (OpenAI, DeepSeek, Groq, Mistral...).
-
-Commandes :
-  python tilegen.py                     # mode local (aucune clé nécessaire)
-  python tilegen.py --count 10          # nombre de noms souhaité
-  python tilegen.py --ai                # génération par IA
-  python tilegen.py --configure-ai      # configurer la clé API une fois pour toutes
+Au lancement (python tilegen.py) : page d'accueil interactive façon OpenCode
+(logo, menu, paramètres). Les options en ligne de commande restent disponibles
+pour l'automatisation :
+  python tilegen.py --count 10          # direct, sans menu
+  python tilegen.py --ai                # direct, mode IA
+  python tilegen.py --configure-ai      # configurer la clé API
   python tilegen.py --export cat.csv    # export Excel
   python tilegen.py --reset             # effacer l'historique
 """
@@ -33,11 +28,10 @@ from pathlib import Path
 GENERATED_NAMES_FILE = Path(__file__).parent / "noms_generes.json"
 CONFIG_FILE = Path(__file__).parent / "tilegen_config.json"
 MAX_ATTEMPTS = 1000
-VERSION = "3.0"
+VERSION = "3.1"
 
 # ============================================================
 #  Interface terminal — style OpenCode
-#  (boîtes arrondies, gris discret, un seul accent orange)
 # ============================================================
 
 class UI:
@@ -54,8 +48,11 @@ if os.name == "nt":
     os.system("")  # active les couleurs ANSI dans le terminal Windows
 
 
+def clear_screen():
+    print("\033[2J\033[H", end="")
+
+
 def _visible_len(text):
-    """Longueur visible d'une chaîne (sans les codes ANSI)."""
     return len(re.sub(r"\033\[[0-9;]*m", "", text))
 
 
@@ -65,14 +62,13 @@ def box(lines, title=None, width=76):
     top = f"╭─ {title} " if title else "╭"
     out.append(UI.GREY + top + "─" * (width - _visible_len(top) - 1) + "╮" + UI.RESET)
     for line in lines:
-        pad = width - _visible_len(line) - 2
+        pad = width - _visible_len(line) - 4  # "│ " + contenu + " │" = 4 caractères fixes
         out.append(UI.GREY + "│ " + UI.RESET + line + " " * max(pad, 0) + UI.GREY + " │" + UI.RESET)
     out.append(UI.GREY + "╰" + "─" * (width - 2) + "╯" + UI.RESET)
     return "\n".join(out)
 
 
 def wrap_text(text, width):
-    """Coupe un texte en lignes de `width` caractères max."""
     words, lines, current = text.split(), [], ""
     for word in words:
         if len(current) + len(word) + 1 <= width:
@@ -85,8 +81,18 @@ def wrap_text(text, width):
     return lines
 
 
+LOGO = [
+    "████████╗ ██╗     ██╗     ███████╗  ██████╗ ███████╗ ███╗   ██╗",
+    "╚══██╔╝   ██║     ██║     ██╔════╝ ██╔════╝ ██╔════╝ ████╗  ██║",
+    "   ██║    ██║     ██║     █████╗   ██║  ███╗ █████╗   ██╔██╗ ██║",
+    "   ██║    ██║     ██║     ██╔══╝   ██║   ██║ ██╔══╝   ██║╚██╗██║",
+    "   ██║    ███████╗███████╗███████╗ ╚██████╔╝ ███████╗ ██║ ╚████║",
+    "   ╚═╝    ╚══════╝╚══════╝╚══════╝  ╚═════╝  ╚══════╝ ╚═╝  ╚═══╝",
+]
+
+
 def ui_header(mode):
-    """Bannière d'accueil TileGen."""
+    """Petit en-tête (mode non interactif)."""
     lines = [
         f"{UI.BOLD}{UI.ACCENT}TileGen{UI.RESET}{UI.GREY}  v{VERSION}{UI.RESET}",
         f"{UI.TEXT}Générateur de noms de carreaux céramiques{UI.RESET}",
@@ -96,8 +102,63 @@ def ui_header(mode):
     print()
 
 
+def home_screen():
+    """Page d'accueil interactive façon OpenCode : logo + menu."""
+    clear_screen()
+    width = 66
+    print()
+    for line in LOGO:
+        pad = (width - len(line)) // 2
+        print(" " * pad + UI.ACCENT + UI.BOLD + line + UI.RESET)
+    print()
+    subtitle = f"{UI.GREY}v{VERSION}  ·  générateur de noms de carreaux céramiques{UI.RESET}"
+    print(subtitle.center(width + 10))
+    print()
+    print(box(
+        [f"{UI.GREY}Lancez {UI.RESET}{UI.TEXT}python tilegen.py --help{UI.RESET}{UI.GREY} "
+         f"pour les options directes{UI.RESET}"],
+        width=width + 4,
+    ))
+    print()
+
+
+def ask(prompt, default=""):
+    """Entrée utilisateur avec valeur par défaut."""
+    suffix = f" {UI.GREY}[{default}]{UI.RESET}" if default != "" else ""
+    value = input(f"  {UI.ACCENT}❯{UI.RESET} {prompt}{suffix} : ").strip()
+    return value or default
+
+
+def ask_count():
+    while True:
+        raw = ask("Nombre de noms à générer", "20")
+        try:
+            count = int(raw)
+            if 1 <= count <= 100:
+                return count
+        except ValueError:
+            pass
+        ui_error("Entrez un nombre entre 1 et 100.")
+
+
+def ui_menu():
+    """Menu principal, sélection par numéro."""
+    items = [
+        ("1", "Générer des noms", "mode local, aucune clé nécessaire"),
+        ("2", "Générer avec l'IA", "clé API requise (OpenAI, DeepSeek...)"),
+        ("3", "Configurer l'IA", "clé API, base URL, modèle"),
+        ("4", "Effacer l'historique", "repartir de zéro"),
+        ("q", "Quitter", ""),
+    ]
+    lines = []
+    for key, label, hint in items:
+        lines.append(f"  {UI.ACCENT}{UI.BOLD}{key}{UI.RESET}. {UI.TEXT}{label:<22}{UI.RESET}"
+                     f"{UI.GREY}{hint}{UI.RESET}")
+    print(box(lines, title="menu"))
+    return input(f"\n  {UI.ACCENT}❯{UI.RESET} ").strip().lower()
+
+
 def ui_results(suggestions, mode):
-    """Affiche les suggestions dans une boîte façon OpenCode."""
     lines = []
     for i, (name, desc) in enumerate(suggestions):
         num = f"{UI.GREY}{i + 1:>2}.{UI.RESET} "
@@ -105,20 +166,34 @@ def ui_results(suggestions, mode):
         first, *rest = wrap_text(desc, 58)
         lines.append(f"{num}{label}{UI.TEXT}{first}{UI.RESET}")
         for extra in rest:
-            lines.append(f"{UI.GREY}    {UI.RESET}{UI.GREY}{extra}{UI.RESET}")
+            lines.append(f"{UI.GREY}    {UI.GREY}{extra}{UI.RESET}")
         if i < len(suggestions) - 1:
             lines.append(f"{UI.GREY}    ····························································{UI.RESET}")
     print(box(lines, title=f"suggestions · {len(suggestions)}"))
 
 
 def ui_footer(count, mode, history_file):
-    """Ligne d'état en bas, comme une barre d'état OpenCode."""
     parts = [
         f"{UI.GREEN}{count} noms{UI.RESET}",
         f"{UI.GREY}mode {mode}{UI.RESET}",
         f"{UI.GREY}historique : {history_file.name}{UI.RESET}",
     ]
     print("\n" + "  ".join(parts))
+
+
+def post_generation(suggestions):
+    """Actions après génération : exporter, menu, quitter."""
+    print()
+    print(box([
+        f"{UI.TEXT}{UI.BOLD}Entrée{UI.RESET}{UI.GREY} retour au menu   "
+        f"{UI.TEXT}{UI.BOLD}e{UI.RESET}{UI.GREY} exporter en CSV   "
+        f"{UI.TEXT}{UI.BOLD}q{UI.RESET}{UI.GREY} quitter{UI.RESET}"
+    ], width=60))
+    choice = input(f"  {UI.ACCENT}❯{UI.RESET} ").strip().lower()
+    if choice == "e":
+        filepath = ask("Nom du fichier", "catalogue.csv")
+        export_to_csv(suggestions, filepath)
+        input(f"\n  {UI.GREY}Entrée pour continuer...{UI.RESET}")
 
 
 def ui_error(message):
@@ -166,7 +241,6 @@ REAL_WORDS_TO_AVOID = {
     "DECO", "REGENT", "MANOR", "ONYX", "BRASS", "COPPER"
 }
 
-# Suffixes « céramique italienne » pour des noms élégants et explicites
 PREMIUM_SUFFIXES = ["NO", "NA", "RA", "INA", "ANA", "ELLA", "ETTA", "INO", "RIA", "ELLO"]
 
 STYLES = [
@@ -197,7 +271,6 @@ class TileNameGenerator:
         self.sources_pool = PLACES_INSPIRATION + VINTAGE_ELEMENTS
         self.existing_names = set(EXISTING_NAMES) | self._load_generated_names()
 
-    # ----- persistance -----
     def _load_generated_names(self):
         if self.persistence_file.exists():
             try:
@@ -221,14 +294,12 @@ class TileNameGenerator:
         if self.persistence_file.exists():
             self.persistence_file.unlink()
 
-    # ----- outils de découpe -----
     def _stem(self, word, min_len=3, max_len=7, at_vowel=True):
-        """Coupe un mot à la fin d'une voyelle pour un nom élégant (ex. VENICE -> VENI)."""
         w = strip_accents(word)
         if at_vowel:
             positions = [i for i, ch in enumerate(w[:max_len]) if ch in self.vowels]
             if len(positions) >= 2:
-                cut = positions[-2] + 1  # avant-dernière voyelle (garde une syllabe de marge)
+                cut = positions[-2] + 1
                 if cut >= min_len:
                     return w[:cut]
             if positions and positions[-1] + 1 >= min_len:
@@ -253,11 +324,9 @@ class TileNameGenerator:
                 count = 0
         if not any(ch in self.vowels for ch in name):
             return False
-        return name[-1] in self.vowels  # se termine par une voyelle => sonorité élégante
+        return name[-1] in self.vowels
 
-    # ----- génération -----
     def generate_name(self):
-        """Retourne (nom, sources) : le nom et les mots qui l'inspirent."""
         for _ in range(MAX_ATTEMPTS):
             method = random.choice([self._from_single_source, self._from_two_sources])
             result = method()
@@ -272,12 +341,10 @@ class TileNameGenerator:
         )
 
     def _from_single_source(self):
-        """SAHARA -> SAHANA / PETRA -> PETRINA : un lieu + un suffixe noble."""
         source = random.choice(self.sources_pool)
         stem = self._stem(source, min_len=3, max_len=6)
         if stem == strip_accents(source):
             stem = self._stem(source, min_len=3, max_len=6, at_vowel=False)
-        # Évite les doubles voyelles (PETRA+ELLO) et les noms trop longs
         candidates = [
             s for s in PREMIUM_SUFFIXES
             if len(stem + s) <= 9 and not (stem[-1] in self.vowels and s[0] in self.vowels)
@@ -288,21 +355,18 @@ class TileNameGenerator:
         return name, [source]
 
     def _from_two_sources(self):
-        """VENICE + MARBLE -> VENMAR : fusion de deux racines explicites."""
         s1 = random.choice(self.sources_pool)
         s2 = random.choice(self.sources_pool)
         if s1 == s2:
             return None
         part1 = self._stem(s1, min_len=2, max_len=4)
         part2 = strip_accents(s2)[:random.randint(3, 4)].lower()
-        # Évite les jonctions en double lettre (SEO+OWE -> SEOO...)
         if part1[-1].lower() == part2[0].lower():
             return None
         name = (part1 + part2).upper()[:9]
         return name, [s1, s2]
 
     def generate_meaning(self, sources):
-        """Description explicite : cite les mots à l'origine du nom."""
         if sources:
             origin = f"Évoque {sources[0].capitalize()}"
             if len(sources) > 1:
@@ -320,7 +384,7 @@ class TileNameGenerator:
         return suggestions
 
 # ============================================================
-#  Mode IA — compatible OpenAI (OpenAI, DeepSeek, Groq, Mistral...)
+#  Mode IA — compatible OpenAI
 # ============================================================
 
 def load_config():
@@ -349,18 +413,19 @@ def configure_ai():
     print()
 
     cfg = load_config()
-    cfg["api_key"] = getpass.getpass(f"  Clé API {UI.GREY}(entrée masquée){UI.RESET} : ").strip()
-    cfg["base_url"] = input(f"  Base URL {UI.GREY}[https://api.openai.com/v1]{UI.RESET} : ").strip() or "https://api.openai.com/v1"
-    cfg["model"] = input(f"  Modèle {UI.GREY}[gpt-4o-mini]{UI.RESET} : ").strip() or "gpt-4o-mini"
+    cfg["api_key"] = getpass.getpass(f"  {UI.ACCENT}❯{UI.RESET} Clé API {UI.GREY}(entrée masquée){UI.RESET} : ").strip()
+    cfg["base_url"] = input(f"  {UI.ACCENT}❯{UI.RESET} Base URL {UI.GREY}[https://api.openai.com/v1]{UI.RESET} : ").strip() or "https://api.openai.com/v1"
+    cfg["model"] = input(f"  {UI.ACCENT}❯{UI.RESET} Modèle {UI.GREY}[gpt-4o-mini]{UI.RESET} : ").strip() or "gpt-4o-mini"
 
     if not cfg["api_key"]:
         ui_error("Clé API vide : configuration annulée.")
-        sys.exit(1)
+        return False
 
     save_config(cfg)
     print()
-    print(box([f"{UI.GREEN}Configuration enregistrée dans {CONFIG_FILE.name}.{UI.RESET}",
-               f"{UI.GREY}Lancez : python tilegen.py --ai{UI.RESET}"], title="terminé"))
+    print(box([f"{UI.GREEN}Configuration enregistrée dans {CONFIG_FILE.name}.{UI.RESET}"],
+              title="terminé"))
+    return True
 
 
 def ai_generate_names(count, cfg):
@@ -370,8 +435,8 @@ def ai_generate_names(count, cfg):
     model = cfg.get("model") or "gpt-4o-mini"
 
     if not api_key:
-        ui_error("Aucune clé API configurée. Lancez : python tilegen.py --configure-ai")
-        sys.exit(1)
+        ui_error("Aucune clé API configurée. Choisissez « Configurer l'IA » dans le menu.")
+        return None
 
     existing = ", ".join(sorted(EXISTING_NAMES)[:15]) + "..."
     prompt = (
@@ -404,18 +469,17 @@ def ai_generate_names(count, cfg):
     except urllib.error.HTTPError as e:
         detail = " ".join(e.read().decode("utf-8", errors="replace").split())[:150]
         ui_error(f"Erreur API {e.code} : {detail}")
-        ui_info("Vérifiez votre clé, votre base_url et votre modèle (python tilegen.py --configure-ai).")
-        sys.exit(1)
+        ui_info("Vérifiez votre clé, votre base_url et votre modèle (menu « Configurer l'IA »).")
+        return None
     except (urllib.error.URLError, KeyError, json.JSONDecodeError) as e:
         ui_error(f"Impossible de joindre l'API : {e}")
-        sys.exit(1)
+        return None
 
-    # Nettoyage de la réponse (l'IA entoure parfois le JSON de ```json ... ```)
     content = re.sub(r"```(?:json)?|```", "", content).strip()
     match = re.search(r"\[.*\]", content, re.DOTALL)
     if not match:
         ui_error("Réponse IA illisible : le modèle n'a pas renvoyé de JSON.")
-        sys.exit(1)
+        return None
 
     items = json.loads(match.group(0))
     suggestions = []
@@ -449,6 +513,64 @@ def print_suggestions(suggestions):
     ui_results(suggestions, "local")
 
 # ============================================================
+#  Session interactive (page d'accueil façon OpenCode)
+# ============================================================
+
+def interactive_session():
+    home_screen()
+    generator = TileNameGenerator()
+    cfg = load_config()
+
+    while True:
+        choice = ui_menu()
+
+        if choice == "q":
+            print(f"\n{UI.GREY}À bientôt — TileGen v{VERSION}{UI.RESET}\n")
+            break
+
+        elif choice == "1":
+            count = ask_count()
+            print()
+            try:
+                suggestions = generator.generate_multiple_names(count)
+            except RuntimeError as e:
+                ui_error(str(e))
+                continue
+            print()
+            ui_results(suggestions, "local")
+            ui_footer(len(suggestions), "local", GENERATED_NAMES_FILE)
+            post_generation(suggestions)
+
+        elif choice == "2":
+            count = ask_count()
+            print()
+            ui_info("Génération via l'IA en cours...")
+            suggestions = ai_generate_names(count, cfg)
+            if suggestions:
+                for name, _ in suggestions:
+                    generator.existing_names.add(name)
+                generator._save_generated_names()
+                print()
+                ui_results(suggestions, "IA")
+                ui_footer(len(suggestions), "IA", GENERATED_NAMES_FILE)
+                post_generation(suggestions)
+
+        elif choice == "3":
+            print()
+            configure_ai()
+            cfg = load_config()
+            input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
+
+        elif choice == "4":
+            generator.reset_history()
+            print()
+            print(box([f"{UI.GREEN}Historique des noms générés effacé.{UI.RESET}"], title="terminé"))
+            input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
+
+        else:
+            ui_error("Choix invalide : tapez 1, 2, 3, 4 ou q.")
+
+# ============================================================
 #  Point d'entrée
 # ============================================================
 
@@ -457,8 +579,8 @@ def main():
         prog="tilegen",
         description="TileGen — Générateur de noms de carreaux céramiques (local ou IA).",
     )
-    parser.add_argument("-n", "--count", type=int, default=20,
-                        help="Nombre de noms à générer (défaut : 20)")
+    parser.add_argument("-n", "--count", type=int, default=None,
+                        help="Nombre de noms à générer (mode direct, sans menu)")
     parser.add_argument("--ai", action="store_true",
                         help="Générer les noms avec l'IA (clé API requise)")
     parser.add_argument("--configure-ai", action="store_true",
@@ -469,7 +591,7 @@ def main():
                         help="Effacer l'historique des noms générés puis quitter")
     args = parser.parse_args()
 
-    # ----- configuration IA -----
+    # ----- actions directes (sans page d'accueil) -----
     if args.configure_ai:
         configure_ai()
         return
@@ -481,29 +603,37 @@ def main():
         print(f"{UI.GREEN}Historique des noms générés effacé.{UI.RESET}")
         return
 
-    # ----- génération -----
-    if args.ai:
-        cfg = load_config()
-        ui_header(f"IA · {cfg.get('model', 'à configurer')}")
-        ui_info("Génération via l'IA en cours...")
-        suggestions = ai_generate_names(args.count, cfg)
-        # Mémorise aussi les noms IA pour éviter les doublons futurs
-        for name, _ in suggestions:
-            generator.existing_names.add(name)
-        generator._save_generated_names()
-        mode = "IA"
-    else:
-        ui_header("local")
-        suggestions = generator.generate_multiple_names(args.count)
-        mode = "local"
+    # ----- mode direct : options fournies en ligne de commande -----
+    if args.count is not None or args.ai or args.export:
+        count = args.count or 20
+        if args.ai:
+            cfg = load_config()
+            ui_header(f"IA · {cfg.get('model', 'à configurer')}")
+            ui_info("Génération via l'IA en cours...")
+            suggestions = ai_generate_names(count, cfg)
+            if suggestions is None:
+                sys.exit(1)
+            for name, _ in suggestions:
+                generator.existing_names.add(name)
+            generator._save_generated_names()
+            mode = "IA"
+        else:
+            ui_header("local")
+            suggestions = generator.generate_multiple_names(count)
+            mode = "local"
 
-    # ----- affichage -----
-    print()
-    ui_results(suggestions, mode)
-    ui_footer(len(suggestions), mode, GENERATED_NAMES_FILE)
+        print()
+        ui_results(suggestions, mode)
+        ui_footer(len(suggestions), mode, GENERATED_NAMES_FILE)
+        if args.export:
+            export_to_csv(suggestions, args.export)
+        return
 
-    if args.export:
-        export_to_csv(suggestions, args.export)
+    # ----- mode interactif : page d'accueil (défaut) -----
+    try:
+        interactive_session()
+    except (KeyboardInterrupt, EOFError):
+        print(f"\n\n{UI.GREY}Session interrompue — à bientôt !{UI.RESET}\n")
 
 
 if __name__ == "__main__":
