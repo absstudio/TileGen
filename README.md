@@ -107,6 +107,26 @@ TileGen mémorise chaque nom généré dans un fichier `noms_generes.json` pour 
 python tilegen.py --help
 ```
 
+### Utiliser le mode IA (facultatif)
+
+TileGen peut aussi générer des noms avec une intelligence artificielle. Cela nécessite une clé API d'un service compatible OpenAI (OpenAI, DeepSeek, Groq, Mistral...). **Sans clé API, le mode local fonctionne parfaitement** — l'IA est une option.
+
+**1. Configurez une seule fois :**
+```bash
+python tilegen.py --configure-ai
+```
+Le programme vous demande :
+- votre **clé API** (saisie masquée, enregistrée dans `tilegen_config.json` local) ;
+- la **base URL** de votre service (ex. `https://api.deepseek.com/v1` pour DeepSeek) ;
+- le **modèle** (ex. `gpt-4o-mini`, `deepseek-chat`...).
+
+**2. Générez avec l'IA :**
+```bash
+python tilegen.py --ai --count 10
+```
+
+> La clé API reste sur votre machine (`tilegen_config.json`, exclu de Git). Vous pouvez aussi passer par la variable d'environnement `TILEGEN_API_KEY`.
+
 ### Utiliser TileGen dans vos propres scripts Python
 
 ```python
@@ -134,15 +154,16 @@ for nom, description in suggestions:
 
 ## Comment ça marche
 
-TileGen combine trois méthodes de génération :
-1. **Lieux** : il tire un lieu du monde (PARIS, SAHARA, KASBAH...) et parfois le tronque (PETRA → PET) ;
-2. **Vintage** : même principe avec des éléments de design (MARBLE, MOSAIC...) ;
-3. **Mixte** : il fusionne le début de deux mots (PETRA + BORGO → PETBOR).
+TileGen combine deux méthodes de génération :
+1. **Suffixe noble** : un lieu du monde tronqué à la voyelle + une terminaison italienne (PETRA → PETRINA, SAHARA → SAHANA, MILAN → MILAANA) ;
+2. **Fusion** : le début de deux mots assemblé (ARCADE + MILAN → ARCAMILA, TOKYO + ARENA → TOARE).
 
 Chaque nom est ensuite contrôlé :
 - il ne doit pas déjà exister dans le catalogue ni dans l'historique ;
 - il ne doit pas être un mot courant du dictionnaire (ARCH, RETRO, PLAZA... sont écartés) ;
-- il doit être prononçable (maximum 3 consonnes d'affilée, au moins une voyelle).
+- il doit être prononçable et se terminer par une voyelle (sonorité élégante).
+
+La description de chaque nom affiche **son étymologie** : vous savez toujours de quoi il s'inspire (« Évoque Porto. Gamme aux tons minéraux... »).
 
 ---
 
@@ -156,6 +177,10 @@ TileGen/
 ├── requirements.txt         # Aucune dépendance externe
 └── README.md                # Ce guide
 ```
+
+Fichiers créés automatiquement sur votre machine (non publiés) :
+- `noms_generes.json` : historique des noms déjà générés ;
+- `tilegen_config.json` : votre configuration IA (clé API), uniquement si vous utilisez `--configure-ai`.
 
 **Aucune dépendance externe** — Python 3.8+ suffit.
 

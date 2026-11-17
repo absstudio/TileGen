@@ -22,3 +22,6 @@ Thumbs.db
 
 # Guide privé du propriétaire (ne pas publier)
 GUIDE_GITHUB.md
+
+# Configuration IA locale (cle API - ne jamais publier)
+tilegen_config.json

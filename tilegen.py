@@ -1,29 +1,137 @@
 # -*- coding: utf-8 -*-
 """
-TileGen — Générateur de noms pour catalogue de carreaux céramiques.
+TileGen v3 — Générateur de noms pour catalogue de carreaux céramiques.
 
-Améliorations par rapport à la V1 :
-- Persistance des noms générés (fichier JSON) : unicité garantie entre les sessions
-- Limite de tentatives dans generate_name (plus de boucle infinie possible)
-- Filtrage des mots réels du dictionnaire (ARCH, RETRO, PLAZA... ne sont plus proposés)
-- Gestion des accents (À, É, Ç...) dans la vérification de prononçabilité
-- Interface en ligne de commande : --count, --export, --reset
+Nouveautés v3 :
+- Interface terminal inspirée d'OpenCode : boîtes arrondies, couleurs, hiérarchie claire
+- Noms plus explicites : étymologie affichée (le nom indique de quoi il s'inspire)
+- Mode IA (facultatif) : entrez votre clé API pour générer des noms avec un LLM
+  compatible OpenAI (OpenAI, DeepSeek, Groq, Mistral...).
+
+Commandes :
+  python tilegen.py                     # mode local (aucune clé nécessaire)
+  python tilegen.py --count 10          # nombre de noms souhaité
+  python tilegen.py --ai                # génération par IA
+  python tilegen.py --configure-ai      # configurer la clé API une fois pour toutes
+  python tilegen.py --export cat.csv    # export Excel
+  python tilegen.py --reset             # effacer l'historique
 """
 
 import argparse
 import csv
+import getpass
 import json
+import os
 import random
+import re
+import sys
 import unicodedata
+import urllib.error
+import urllib.request
 from pathlib import Path
 
-# Fichier de persistance des noms générés
 GENERATED_NAMES_FILE = Path(__file__).parent / "noms_generes.json"
-
-# Nombre maximum de tentatives avant d'abandonner
+CONFIG_FILE = Path(__file__).parent / "tilegen_config.json"
 MAX_ATTEMPTS = 1000
+VERSION = "3.0"
 
-# Liste des noms existants (doublon "FLASH" corrigé)
+# ============================================================
+#  Interface terminal — style OpenCode
+#  (boîtes arrondies, gris discret, un seul accent orange)
+# ============================================================
+
+class UI:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    ACCENT = "\033[38;5;208m"    # orange OpenCode
+    GREY = "\033[38;5;243m"
+    TEXT = "\033[38;5;253m"
+    GREEN = "\033[38;5;71m"
+    RED = "\033[38;5;167m"
+
+if os.name == "nt":
+    os.system("")  # active les couleurs ANSI dans le terminal Windows
+
+
+def _visible_len(text):
+    """Longueur visible d'une chaîne (sans les codes ANSI)."""
+    return len(re.sub(r"\033\[[0-9;]*m", "", text))
+
+
+def box(lines, title=None, width=76):
+    """Dessine une boîte arrondie façon OpenCode."""
+    out = []
+    top = f"╭─ {title} " if title else "╭"
+    out.append(UI.GREY + top + "─" * (width - _visible_len(top) - 1) + "╮" + UI.RESET)
+    for line in lines:
+        pad = width - _visible_len(line) - 2
+        out.append(UI.GREY + "│ " + UI.RESET + line + " " * max(pad, 0) + UI.GREY + " │" + UI.RESET)
+    out.append(UI.GREY + "╰" + "─" * (width - 2) + "╯" + UI.RESET)
+    return "\n".join(out)
+
+
+def wrap_text(text, width):
+    """Coupe un texte en lignes de `width` caractères max."""
+    words, lines, current = text.split(), [], ""
+    for word in words:
+        if len(current) + len(word) + 1 <= width:
+            current = (current + " " + word).strip()
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def ui_header(mode):
+    """Bannière d'accueil TileGen."""
+    lines = [
+        f"{UI.BOLD}{UI.ACCENT}TileGen{UI.RESET}{UI.GREY}  v{VERSION}{UI.RESET}",
+        f"{UI.TEXT}Générateur de noms de carreaux céramiques{UI.RESET}",
+        f"{UI.GREY}mode : {mode}{UI.RESET}",
+    ]
+    print(box(lines, title="tilegen"))
+    print()
+
+
+def ui_results(suggestions, mode):
+    """Affiche les suggestions dans une boîte façon OpenCode."""
+    lines = []
+    for i, (name, desc) in enumerate(suggestions):
+        num = f"{UI.GREY}{i + 1:>2}.{UI.RESET} "
+        label = f"{UI.BOLD}{UI.ACCENT}{name:<9}{UI.RESET} "
+        first, *rest = wrap_text(desc, 58)
+        lines.append(f"{num}{label}{UI.TEXT}{first}{UI.RESET}")
+        for extra in rest:
+            lines.append(f"{UI.GREY}    {UI.RESET}{UI.GREY}{extra}{UI.RESET}")
+        if i < len(suggestions) - 1:
+            lines.append(f"{UI.GREY}    ····························································{UI.RESET}")
+    print(box(lines, title=f"suggestions · {len(suggestions)}"))
+
+
+def ui_footer(count, mode, history_file):
+    """Ligne d'état en bas, comme une barre d'état OpenCode."""
+    parts = [
+        f"{UI.GREEN}{count} noms{UI.RESET}",
+        f"{UI.GREY}mode {mode}{UI.RESET}",
+        f"{UI.GREY}historique : {history_file.name}{UI.RESET}",
+    ]
+    print("\n" + "  ".join(parts))
+
+
+def ui_error(message):
+    print(box([f"{UI.RED}{message}{UI.RESET}"], title="erreur"))
+
+
+def ui_info(message):
+    print(f"{UI.GREY}{message}{UI.RESET}")
+
+# ============================================================
+#  Données
+# ============================================================
+
 EXISTING_NAMES = [
     "ARTIC", "ROYAL", "CASTLE", "ROCA", "FAÇADE", "TERRANGA", "AZAR",
     "ARDOISE", "SHERPA", "SAFRAN", "PLATINE", "FUJI", "TIGER",
@@ -33,34 +141,22 @@ EXISTING_NAMES = [
     "COSTA", "DUNE", "ERUPTION"
 ]
 
-# Inspiration de villes et lieux touristiques
 PLACES_INSPIRATION = [
-    # Villes historiques
     "PETRA", "ROMA", "CAIRO", "PARIS", "VENICE", "PORTO", "MILAN",
     "VIENNA", "PRAGUE", "SEOUL", "TOKYO", "KYOTO", "DELHI", "DUBAI",
-    # Sites naturels
-    "SAHARA", "ATLAS", "ANDES", "FUJI", "ALPES", "NILE", "CONGO",
+    "SAHARA", "ATLAS", "ANDES", "ALPES", "NILE", "CONGO",
     "AMAZON", "GOBI", "TUNDRA", "SIERRA", "OASIS",
-    # Monuments
     "CASTLE", "PALACE", "TEMPLE", "TOWER", "OPERA", "PLAZA", "ARENA",
-    # Quartiers célèbres
     "SOHO", "MARAIS", "BORGO", "MEDINA", "KASBAH"
 ]
 
-# Éléments vintage et classiques
 VINTAGE_ELEMENTS = [
-    # Styles architecturaux
     "DECO", "RETRO", "LOFT", "MANOR", "VILLA", "ROYAL", "NOBLE",
-    # Matériaux nobles
     "MARBLE", "ONYX", "BRASS", "COPPER", "SILVER", "PEARL", "IVORY",
-    # Éléments de design
     "ARCADE", "COLUMN", "MOSAIC", "FRESCO", "VAULT", "ARCH",
-    # Époques
     "EMPIRE", "REGENT", "LEGACY", "CROWN", "GLORY", "GRAND"
 ]
 
-# Mots réels du dictionnaire à éviter dans les suggestions
-# (un nouveau nom de produit ne doit pas être un mot courant existant)
 REAL_WORDS_TO_AVOID = {
     "CASTLE", "PALACE", "TEMPLE", "TOWER", "OPERA", "PLAZA", "ARENA",
     "OASIS", "RETRO", "LOFT", "VILLA", "NOBLE", "MARBLE", "SILVER",
@@ -70,36 +166,47 @@ REAL_WORDS_TO_AVOID = {
     "DECO", "REGENT", "MANOR", "ONYX", "BRASS", "COPPER"
 }
 
+# Suffixes « céramique italienne » pour des noms élégants et explicites
+PREMIUM_SUFFIXES = ["NO", "NA", "RA", "INA", "ANA", "ELLA", "ETTA", "INO", "RIA", "ELLO"]
+
+STYLES = [
+    "Collection inspirée de la nature", "Série évoquant la pureté des éléments",
+    "Gamme aux tons minéraux", "Collection de style épuré",
+    "Série aux lignes élégantes", "Gamme contemporaine raffinée"
+]
+AMBIANCES = [
+    "pour une ambiance sereine", "créant une atmosphère apaisante",
+    "apportant douceur et élégance", "pour un style intemporel",
+    "offrant une touche de raffinement", "créant un espace harmonieux"
+]
+
 
 def strip_accents(text):
-    """Retire les accents pour la vérification de prononçabilité (É -> E, Ç -> C)."""
     nfkd = unicodedata.normalize("NFKD", text)
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
+# ============================================================
+#  Générateur local — noms explicites avec étymologie
+# ============================================================
 
 class TileNameGenerator:
     def __init__(self, persistence_file=GENERATED_NAMES_FILE):
         self.persistence_file = Path(persistence_file)
         self.vowels = set('AEIOU')
         self.consonants = set('BCDFGHLMNPRSTVZ')
-        self.places = PLACES_INSPIRATION
-        self.vintage = VINTAGE_ELEMENTS
-        # Fusionne les noms d'origine et les noms générés lors des sessions précédentes
+        self.sources_pool = PLACES_INSPIRATION + VINTAGE_ELEMENTS
         self.existing_names = set(EXISTING_NAMES) | self._load_generated_names()
 
+    # ----- persistance -----
     def _load_generated_names(self):
-        """Charge les noms générés lors des sessions précédentes."""
         if self.persistence_file.exists():
             try:
-                data = json.loads(self.persistence_file.read_text(encoding="utf-8"))
-                return set(data.get("names", []))
+                return set(json.loads(self.persistence_file.read_text(encoding="utf-8")).get("names", []))
             except (json.JSONDecodeError, OSError):
-                # Fichier corrompu : on repart de la liste d'origine
                 return set()
         return set()
 
     def _save_generated_names(self):
-        """Sauvegarde les noms générés pour garantir l'unicité entre les sessions."""
         generated = self.existing_names - set(EXISTING_NAMES)
         try:
             self.persistence_file.write_text(
@@ -107,180 +214,293 @@ class TileNameGenerator:
                 encoding="utf-8",
             )
         except OSError:
-            pass  # La persistance est un plus, pas une obligation
+            pass
 
     def reset_history(self):
-        """Efface l'historique des noms générés (retour à la liste d'origine)."""
         self.existing_names = set(EXISTING_NAMES)
         if self.persistence_file.exists():
             self.persistence_file.unlink()
 
-    def generate_name(self):
-        """Génère un nouveau nom inspiré de lieux et d'éléments vintage.
+    # ----- outils de découpe -----
+    def _stem(self, word, min_len=3, max_len=7, at_vowel=True):
+        """Coupe un mot à la fin d'une voyelle pour un nom élégant (ex. VENICE -> VENI)."""
+        w = strip_accents(word)
+        if at_vowel:
+            positions = [i for i, ch in enumerate(w[:max_len]) if ch in self.vowels]
+            if len(positions) >= 2:
+                cut = positions[-2] + 1  # avant-dernière voyelle (garde une syllabe de marge)
+                if cut >= min_len:
+                    return w[:cut]
+            if positions and positions[-1] + 1 >= min_len:
+                return w[:positions[-1] + 1]
+        return w[:min(max_len, len(w))]
 
-        Lève RuntimeError si aucune combinaison valide n'est trouvée
-        après MAX_ATTEMPTS tentatives (protection contre la boucle infinie).
-        """
-        for _ in range(MAX_ATTEMPTS):
-            method = random.choice([
-                self.generate_from_place,
-                self.generate_from_vintage,
-                self.generate_mixed_name
-            ])
-            name = method()
-
-            if (name not in self.existing_names
-                    and name not in REAL_WORDS_TO_AVOID
-                    and self.is_pronounceable(name)):
-                self.existing_names.add(name)
-                self._save_generated_names()
-                return name
-
-        raise RuntimeError(
-            f"Aucun nom valide trouvé après {MAX_ATTEMPTS} tentatives. "
-            "Enrichissez les listes d'inspiration ou réinitialisez l'historique (--reset)."
-        )
-
-    def generate_from_place(self):
-        """Génère un nom inspiré d'un lieu."""
-        place = random.choice(self.places)
-        if len(place) > 6:
-            # Prend une partie du nom
-            start = random.randint(0, len(place) - 4)
-            length = random.randint(4, 6)
-            return place[start:start + length].upper()
-        return place.upper()
-
-    def generate_from_vintage(self):
-        """Génère un nom inspiré d'éléments vintage."""
-        element = random.choice(self.vintage)
-        if len(element) > 6:
-            # Prend une partie du nom
-            start = random.randint(0, len(element) - 4)
-            length = random.randint(4, 6)
-            return element[start:start + length].upper()
-        return element.upper()
-
-    def generate_mixed_name(self):
-        """Combine des éléments de lieux et vintage."""
-        source1 = random.choice(self.places + self.vintage)
-        source2 = random.choice(self.places + self.vintage)
-
-        # Prend quelques lettres de chaque source
-        part1 = source1[:random.randint(2, 3)]
-        part2 = source2[:random.randint(2, 3)]
-
-        return (part1 + part2).upper()
+    def is_valid(self, name):
+        return (name not in self.existing_names
+                and name not in REAL_WORDS_TO_AVOID
+                and self.is_pronounceable(name))
 
     def is_pronounceable(self, name):
-        """Vérifie si le nom est prononçable (accents gérés)."""
-        name = strip_accents(name)
         if len(name) < 3:
             return False
-
-        # Vérifie qu'il n'y a pas trop de consonnes consécutives
-        consonant_count = 0
-        for char in name:
-            if char in self.consonants:
-                consonant_count += 1
-                if consonant_count > 3:
+        count = 0
+        for ch in name:
+            if ch in self.consonants:
+                count += 1
+                if count > 3:
                     return False
             else:
-                consonant_count = 0
+                count = 0
+        if not any(ch in self.vowels for ch in name):
+            return False
+        return name[-1] in self.vowels  # se termine par une voyelle => sonorité élégante
 
-        # Vérifie qu'il y a au moins une voyelle
-        return any(char in self.vowels for char in name)
+    # ----- génération -----
+    def generate_name(self):
+        """Retourne (nom, sources) : le nom et les mots qui l'inspirent."""
+        for _ in range(MAX_ATTEMPTS):
+            method = random.choice([self._from_single_source, self._from_two_sources])
+            result = method()
+            if result and self.is_valid(result[0]):
+                name, sources = result
+                self.existing_names.add(name)
+                self._save_generated_names()
+                return name, sources
+        raise RuntimeError(
+            f"Aucun nom valide trouvé après {MAX_ATTEMPTS} tentatives. "
+            "Utilisez --reset ou enrichissez les listes d'inspiration."
+        )
 
-    def generate_meaning(self):
-        """Génère une définition conceptuelle du carreau."""
-        style = random.choice([
-            "Collection inspirée de la nature",
-            "Série évoquant la pureté des éléments",
-            "Gamme aux tons minéraux",
-            "Collection de style épuré",
-            "Série aux lignes élégantes",
-            "Gamme contemporaine raffinée"
-        ])
-        ambiance = random.choice([
-            "pour une ambiance sereine",
-            "créant une atmosphère apaisante",
-            "apportant douceur et élégance",
-            "pour un style intemporel",
-            "offrant une touche de raffinement",
-            "créant un espace harmonieux"
-        ])
-        inspiration = random.choice([
-            "Inspiré des éléments naturels",
-            "Puisant dans la beauté de la nature",
-            "S'inspirant des matières nobles",
-            "Évoquant la pureté des formes",
-            "Né de l'harmonie des éléments",
-            "Inspiré des textures naturelles"
-        ])
+    def _from_single_source(self):
+        """SAHARA -> SAHANA / PETRA -> PETRINA : un lieu + un suffixe noble."""
+        source = random.choice(self.sources_pool)
+        stem = self._stem(source, min_len=3, max_len=6)
+        if stem == strip_accents(source):
+            stem = self._stem(source, min_len=3, max_len=6, at_vowel=False)
+        # Évite les doubles voyelles (PETRA+ELLO) et les noms trop longs
+        candidates = [
+            s for s in PREMIUM_SUFFIXES
+            if len(stem + s) <= 9 and not (stem[-1] in self.vowels and s[0] in self.vowels)
+        ]
+        if not candidates:
+            return None
+        name = stem + random.choice(candidates)
+        return name, [source]
 
-        return f"{style}. {inspiration}, {ambiance}."
+    def _from_two_sources(self):
+        """VENICE + MARBLE -> VENMAR : fusion de deux racines explicites."""
+        s1 = random.choice(self.sources_pool)
+        s2 = random.choice(self.sources_pool)
+        if s1 == s2:
+            return None
+        part1 = self._stem(s1, min_len=2, max_len=4)
+        part2 = strip_accents(s2)[:random.randint(3, 4)].lower()
+        # Évite les jonctions en double lettre (SEO+OWE -> SEOO...)
+        if part1[-1].lower() == part2[0].lower():
+            return None
+        name = (part1 + part2).upper()[:9]
+        return name, [s1, s2]
+
+    def generate_meaning(self, sources):
+        """Description explicite : cite les mots à l'origine du nom."""
+        if sources:
+            origin = f"Évoque {sources[0].capitalize()}"
+            if len(sources) > 1:
+                origin += f" et {sources[1].capitalize()}"
+            origin += ". "
+        else:
+            origin = ""
+        return f"{origin}{random.choice(STYLES)}, {random.choice(AMBIANCES)}."
 
     def generate_multiple_names(self, count=5):
-        """Génère plusieurs noms uniques avec leurs significations."""
         suggestions = []
         for _ in range(count):
-            name = self.generate_name()
-            meaning = self.generate_meaning()
-            suggestions.append((name, meaning))
+            name, sources = self.generate_name()
+            suggestions.append((name, self.generate_meaning(sources)))
         return suggestions
 
+# ============================================================
+#  Mode IA — compatible OpenAI (OpenAI, DeepSeek, Groq, Mistral...)
+# ============================================================
 
-def print_suggestions(suggestions):
-    """Affiche un tableau formaté des suggestions."""
-    print("\nCATALOGUE DE CARREAUX CÉRAMIQUES")
-    print("=" * 80)
-    print("NOM        | DESCRIPTION")
-    print("-" * 80)
+def load_config():
+    if CONFIG_FILE.exists():
+        try:
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
 
-    for name, description in suggestions:
-        print(f"{name:<10} | {description}")
-        print("-" * 80)  # Ligne de séparation entre chaque modèle
 
-    print("=" * 80)
+def save_config(cfg):
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def configure_ai():
+    """Configuration interactive de la clé API (sauvegardée localement)."""
+    print(box([
+        f"{UI.TEXT}Configurez votre accès à l'IA (compatible OpenAI).{UI.RESET}",
+        f"{UI.GREY}Exemples de base_url :{UI.RESET}",
+        f"{UI.GREY}  OpenAI  : https://api.openai.com/v1   (modèle gpt-4o-mini){UI.RESET}",
+        f"{UI.GREY}  DeepSeek: https://api.deepseek.com/v1 (modèle deepseek-chat){UI.RESET}",
+        f"{UI.GREY}  Groq    : https://api.groq.com/openai/v1 (modèle llama-3.3-70b-versatile){UI.RESET}",
+        f"{UI.GREY}  Mistral : https://api.mistral.ai/v1   (modèle mistral-small-latest){UI.RESET}",
+    ], title="configuration IA"))
     print()
 
+    cfg = load_config()
+    cfg["api_key"] = getpass.getpass(f"  Clé API {UI.GREY}(entrée masquée){UI.RESET} : ").strip()
+    cfg["base_url"] = input(f"  Base URL {UI.GREY}[https://api.openai.com/v1]{UI.RESET} : ").strip() or "https://api.openai.com/v1"
+    cfg["model"] = input(f"  Modèle {UI.GREY}[gpt-4o-mini]{UI.RESET} : ").strip() or "gpt-4o-mini"
+
+    if not cfg["api_key"]:
+        ui_error("Clé API vide : configuration annulée.")
+        sys.exit(1)
+
+    save_config(cfg)
+    print()
+    print(box([f"{UI.GREEN}Configuration enregistrée dans {CONFIG_FILE.name}.{UI.RESET}",
+               f"{UI.GREY}Lancez : python tilegen.py --ai{UI.RESET}"], title="terminé"))
+
+
+def ai_generate_names(count, cfg):
+    """Génère des noms via l'API (format OpenAI /chat/completions)."""
+    api_key = os.environ.get("TILEGEN_API_KEY") or cfg.get("api_key")
+    base_url = (cfg.get("base_url") or "https://api.openai.com/v1").rstrip("/")
+    model = cfg.get("model") or "gpt-4o-mini"
+
+    if not api_key:
+        ui_error("Aucune clé API configurée. Lancez : python tilegen.py --configure-ai")
+        sys.exit(1)
+
+    existing = ", ".join(sorted(EXISTING_NAMES)[:15]) + "..."
+    prompt = (
+        f"Tu es un expert en naming de produits céramiques. Génère exactement {count} noms "
+        f"de collections de carreaux, inspirés de lieux du monde et de matières nobles. "
+        f"Évite ces noms déjà utilisés : {existing}\n"
+        f"Contraintes : 4 à 9 lettres, prononçables, sonorité méditerranéenne élégante, "
+        f"pas de mots anglais courants, uniques entre eux.\n"
+        f"Pour chaque nom, ajoute une description commerciale d'une phrase en français "
+        f"qui explique l'inspiration.\n"
+        f'Réponds UNIQUEMENT avec un JSON : [{{"name": "...", "description": "..."}}, ...]'
+    )
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.9,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{base_url}/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            content = json.loads(resp.read().decode("utf-8"))["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        detail = " ".join(e.read().decode("utf-8", errors="replace").split())[:150]
+        ui_error(f"Erreur API {e.code} : {detail}")
+        ui_info("Vérifiez votre clé, votre base_url et votre modèle (python tilegen.py --configure-ai).")
+        sys.exit(1)
+    except (urllib.error.URLError, KeyError, json.JSONDecodeError) as e:
+        ui_error(f"Impossible de joindre l'API : {e}")
+        sys.exit(1)
+
+    # Nettoyage de la réponse (l'IA entoure parfois le JSON de ```json ... ```)
+    content = re.sub(r"```(?:json)?|```", "", content).strip()
+    match = re.search(r"\[.*\]", content, re.DOTALL)
+    if not match:
+        ui_error("Réponse IA illisible : le modèle n'a pas renvoyé de JSON.")
+        sys.exit(1)
+
+    items = json.loads(match.group(0))
+    suggestions = []
+    for item in items[:count]:
+        name = str(item.get("name", "")).strip().upper()[:12]
+        desc = str(item.get("description", "")).strip()
+        if name:
+            suggestions.append((name, desc or "Nom généré par IA."))
+    return suggestions
+
+# ============================================================
+#  Export / compatibilité
+# ============================================================
 
 def export_to_csv(suggestions, filepath):
-    """Exporte les suggestions dans un fichier CSV."""
     with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f, delimiter=";")
         writer.writerow(["Nom", "Description"])
         writer.writerows(suggestions)
-    print(f"Export CSV réussi : {filepath}")
+    print(f"{UI.GREEN}Export CSV réussi : {filepath}{UI.RESET}")
 
 
 def suggest_names(count=5):
-    """Fonction principale pour suggérer de nouveaux noms (compatibilité V1)."""
-    generator = TileNameGenerator()
-    return generator.generate_multiple_names(count)
+    """Compatibilité : import du module dans un script Python."""
+    gen = TileNameGenerator()
+    return gen.generate_multiple_names(count)
 
+
+def print_suggestions(suggestions):
+    ui_header("local")
+    ui_results(suggestions, "local")
+
+# ============================================================
+#  Point d'entrée
+# ============================================================
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Générateur de noms pour catalogue de carreaux céramiques."
+        prog="tilegen",
+        description="TileGen — Générateur de noms de carreaux céramiques (local ou IA).",
     )
     parser.add_argument("-n", "--count", type=int, default=20,
                         help="Nombre de noms à générer (défaut : 20)")
+    parser.add_argument("--ai", action="store_true",
+                        help="Générer les noms avec l'IA (clé API requise)")
+    parser.add_argument("--configure-ai", action="store_true",
+                        help="Configurer la clé API, la base URL et le modèle")
     parser.add_argument("-e", "--export", metavar="FICHIER",
-                        help="Exporter aussi les résultats en CSV (ex. catalogue.csv)")
+                        help="Exporter les résultats en CSV (ex. catalogue.csv)")
     parser.add_argument("--reset", action="store_true",
                         help="Effacer l'historique des noms générés puis quitter")
     args = parser.parse_args()
+
+    # ----- configuration IA -----
+    if args.configure_ai:
+        configure_ai()
+        return
 
     generator = TileNameGenerator()
 
     if args.reset:
         generator.reset_history()
-        print("Historique des noms générés effacé.")
+        print(f"{UI.GREEN}Historique des noms générés effacé.{UI.RESET}")
         return
 
-    suggestions = generator.generate_multiple_names(args.count)
-    print_suggestions(suggestions)
+    # ----- génération -----
+    if args.ai:
+        cfg = load_config()
+        ui_header(f"IA · {cfg.get('model', 'à configurer')}")
+        ui_info("Génération via l'IA en cours...")
+        suggestions = ai_generate_names(args.count, cfg)
+        # Mémorise aussi les noms IA pour éviter les doublons futurs
+        for name, _ in suggestions:
+            generator.existing_names.add(name)
+        generator._save_generated_names()
+        mode = "IA"
+    else:
+        ui_header("local")
+        suggestions = generator.generate_multiple_names(args.count)
+        mode = "local"
+
+    # ----- affichage -----
+    print()
+    ui_results(suggestions, mode)
+    ui_footer(len(suggestions), mode, GENERATED_NAMES_FILE)
 
     if args.export:
         export_to_csv(suggestions, args.export)
