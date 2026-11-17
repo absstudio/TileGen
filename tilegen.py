@@ -20,6 +20,7 @@ import os
 import random
 import re
 import sys
+import time
 import unicodedata
 import urllib.error
 import urllib.request
@@ -145,9 +146,10 @@ def ui_menu():
     """Menu principal, sélection par numéro."""
     items = [
         ("1", "Générer des noms", "mode local, aucune clé nécessaire"),
-        ("2", "Générer avec l'IA", "clé API requise (OpenAI, DeepSeek...)"),
-        ("3", "Configurer l'IA", "clé API, base URL, modèle"),
-        ("4", "Effacer l'historique", "repartir de zéro"),
+        ("2", "Générer avec l'IA", "clé API requise (OpenAI, Gemini...)"),
+        ("3", "Configurer l'IA", "fournisseur, clé API, modèle"),
+        ("4", "Tester l'API", "vérifier que la connexion IA marche"),
+        ("5", "Effacer l'historique", "repartir de zéro"),
         ("q", "Quitter", ""),
     ]
     lines = []
@@ -400,32 +402,114 @@ def save_config(cfg):
     CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
 
+# Presets de fournisseurs compatibles OpenAI (nom, base_url, modèle par défaut)
+AI_PRESETS = [
+    ("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
+    ("Google AI Studio (Gemini)", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"),
+    ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
+    ("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+    ("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest"),
+    ("Autre / personnalisé", "", ""),
+]
+
+
 def configure_ai():
-    """Configuration interactive de la clé API (sauvegardée localement)."""
-    print(box([
-        f"{UI.TEXT}Configurez votre accès à l'IA (compatible OpenAI).{UI.RESET}",
-        f"{UI.GREY}Exemples de base_url :{UI.RESET}",
-        f"{UI.GREY}  OpenAI  : https://api.openai.com/v1   (modèle gpt-4o-mini){UI.RESET}",
-        f"{UI.GREY}  DeepSeek: https://api.deepseek.com/v1 (modèle deepseek-chat){UI.RESET}",
-        f"{UI.GREY}  Groq    : https://api.groq.com/openai/v1 (modèle llama-3.3-70b-versatile){UI.RESET}",
-        f"{UI.GREY}  Mistral : https://api.mistral.ai/v1   (modèle mistral-small-latest){UI.RESET}",
-    ], title="configuration IA"))
+    """Configuration interactive : choix du fournisseur, clé API, puis test."""
+    lines = [
+        f"{UI.TEXT}Choisissez votre fournisseur IA (compatible OpenAI) :{UI.RESET}",
+        "",
+    ]
+    for i, (name, _, model) in enumerate(AI_PRESETS, 1):
+        hint = f"{UI.GREY}{model}{UI.RESET}" if model else f"{UI.GREY}base URL et modèle libres{UI.RESET}"
+        lines.append(f"  {UI.ACCENT}{UI.BOLD}{i}{UI.RESET}. {UI.TEXT}{name:<28}{UI.RESET}{hint}")
+    print(box(lines, title="configuration IA"))
     print()
+
+    choice = ask("Fournisseur", "1")
+    try:
+        preset = AI_PRESETS[int(choice) - 1]
+    except (ValueError, IndexError):
+        ui_error("Choix invalide : configuration annulée.")
+        return False
+
+    name, base_url, model = preset
+    print()
+
+    if name == "Google AI Studio (Gemini)":
+        ui_info(f"Clé gratuite sur {UI.RESET}{UI.TEXT}https://aistudio.google.com/apikey{UI.RESET}"
+                f"{UI.GREY} (Get API key → Create API key){UI.RESET}")
+        print()
 
     cfg = load_config()
     cfg["api_key"] = getpass.getpass(f"  {UI.ACCENT}❯{UI.RESET} Clé API {UI.GREY}(entrée masquée){UI.RESET} : ").strip()
-    cfg["base_url"] = input(f"  {UI.ACCENT}❯{UI.RESET} Base URL {UI.GREY}[https://api.openai.com/v1]{UI.RESET} : ").strip() or "https://api.openai.com/v1"
-    cfg["model"] = input(f"  {UI.ACCENT}❯{UI.RESET} Modèle {UI.GREY}[gpt-4o-mini]{UI.RESET} : ").strip() or "gpt-4o-mini"
-
     if not cfg["api_key"]:
         ui_error("Clé API vide : configuration annulée.")
         return False
+
+    if base_url:
+        cfg["base_url"] = ask(f"Base URL {UI.GREY}[{base_url}]{UI.RESET}", base_url)
+        cfg["model"] = ask(f"Modèle {UI.GREY}[{model}]{UI.RESET}", model)
+    else:
+        cfg["base_url"] = ask("Base URL", "https://api.openai.com/v1")
+        cfg["model"] = ask("Modèle", "gpt-4o-mini")
 
     save_config(cfg)
     print()
     print(box([f"{UI.GREEN}Configuration enregistrée dans {CONFIG_FILE.name}.{UI.RESET}"],
               title="terminé"))
+    print()
+
+    # Test immédiat de la connexion
+    if ask("Tester la connexion maintenant ?", "O").lower() in ("o", "oui", "y", "yes"):
+        ok, message = test_api(cfg)
+        if ok:
+            print(box([f"{UI.GREEN}{message}{UI.RESET}"], title="test API · succès"))
+        else:
+            print(box([f"{UI.RED}{message}{UI.RESET}",
+                       f"{UI.GREY}Vérifiez la clé, la base URL et le modèle, puis reconfigurez.{UI.RESET}"],
+                      title="test API · échec"))
     return True
+
+
+def test_api(cfg=None):
+    """Envoie une requête minimale pour vérifier que l'API répond.
+
+    Retourne (True, message) ou (False, message d'erreur).
+    """
+    cfg = cfg or load_config()
+    api_key = os.environ.get("TILEGEN_API_KEY") or cfg.get("api_key")
+    base_url = (cfg.get("base_url") or "https://api.openai.com/v1").rstrip("/")
+    model = cfg.get("model") or "gpt-4o-mini"
+
+    if not api_key:
+        return False, "Aucune clé API configurée."
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": "Réponds uniquement par : OK"}],
+        "max_tokens": 10,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{base_url}/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+
+    start = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            reply = json.loads(resp.read().decode("utf-8"))["choices"][0]["message"]["content"]
+        latency = time.monotonic() - start
+        return True, f"Connexion réussie · {model} · {latency:.1f}s · réponse : « {reply.strip()[:30]} »"
+    except urllib.error.HTTPError as e:
+        detail = " ".join(e.read().decode("utf-8", errors="replace").split())[:120]
+        return False, f"Erreur {e.code} : {detail}"
+    except urllib.error.URLError as e:
+        return False, f"Impossible de joindre {base_url} : {e.reason}"
+    except (KeyError, json.JSONDecodeError) as e:
+        return False, f"Réponse inattendue de l'API : {e}"
 
 
 def ai_generate_names(count, cfg):
@@ -562,13 +646,27 @@ def interactive_session():
             input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
 
         elif choice == "4":
+            print()
+            ui_info("Test de la connexion IA en cours...")
+            ok, message = test_api(cfg)
+            if ok:
+                print()
+                print(box([f"{UI.GREEN}{message}{UI.RESET}"], title="test API · succès"))
+            else:
+                print()
+                print(box([f"{UI.RED}{message}{UI.RESET}",
+                           f"{UI.GREY}Configurez l'IA (option 3) puis retestez.{UI.RESET}"],
+                          title="test API · échec"))
+            input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
+
+        elif choice == "5":
             generator.reset_history()
             print()
             print(box([f"{UI.GREEN}Historique des noms générés effacé.{UI.RESET}"], title="terminé"))
             input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
 
         else:
-            ui_error("Choix invalide : tapez 1, 2, 3, 4 ou q.")
+            ui_error("Choix invalide : tapez 1, 2, 3, 4, 5 ou q.")
 
 # ============================================================
 #  Point d'entrée
@@ -584,7 +682,9 @@ def main():
     parser.add_argument("--ai", action="store_true",
                         help="Générer les noms avec l'IA (clé API requise)")
     parser.add_argument("--configure-ai", action="store_true",
-                        help="Configurer la clé API, la base URL et le modèle")
+                        help="Configurer le fournisseur, la clé API et le modèle")
+    parser.add_argument("--test-ai", action="store_true",
+                        help="Tester la connexion à l'API configurée puis quitter")
     parser.add_argument("-e", "--export", metavar="FICHIER",
                         help="Exporter les résultats en CSV (ex. catalogue.csv)")
     parser.add_argument("--reset", action="store_true",
@@ -594,6 +694,16 @@ def main():
     # ----- actions directes (sans page d'accueil) -----
     if args.configure_ai:
         configure_ai()
+        return
+
+    if args.test_ai:
+        ui_header("test API")
+        ok, message = test_api()
+        if ok:
+            print(box([f"{UI.GREEN}{message}{UI.RESET}"], title="test API · succès"))
+        else:
+            print(box([f"{UI.RED}{message}{UI.RESET}"], title="test API · échec"))
+            sys.exit(1)
         return
 
     generator = TileNameGenerator()

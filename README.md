@@ -121,12 +121,27 @@ TileGen peut aussi générer des noms avec une intelligence artificielle. Cela n
 ```bash
 python tilegen.py --configure-ai
 ```
-Le programme vous demande :
-- votre **clé API** (saisie masquée, enregistrée dans `tilegen_config.json` local) ;
-- la **base URL** de votre service (ex. `https://api.deepseek.com/v1` pour DeepSeek) ;
-- le **modèle** (ex. `gpt-4o-mini`, `deepseek-chat`...).
+Le programme vous demande de choisir votre **fournisseur** dans une liste (la base URL et le modèle sont remplis automatiquement) :
 
-**2. Générez avec l'IA :**
+| # | Fournisseur | Modèle par défaut |
+|---|---|---|
+| 1 | OpenAI | gpt-4o-mini |
+| 2 | **Google AI Studio (Gemini)** | gemini-2.0-flash |
+| 3 | DeepSeek | deepseek-chat |
+| 4 | Groq | llama-3.3-70b-versatile |
+| 5 | Mistral | mistral-small-latest |
+| 6 | Autre / personnalisé | libre |
+
+> Pour **Google AI Studio** : clé gratuite sur [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (bouton *Get API key* → *Create API key*). Collez-la quand le programme la demande (saisie masquée), puis lancez le test de connexion.
+
+**2. Testez que ça marche :**
+- directement après la configuration (le programme propose « Tester la connexion maintenant ? ») ;
+- ou plus tard via le menu principal → **4. Tester l'API** ;
+- ou en ligne de commande : `python tilegen.py --test-ai`.
+
+Le test envoie une requête minimale au service et affiche le résultat : `Connexion réussie · gemini-2.0-flash · 1.2s · réponse : « OK »` ou la cause précise de l'échec (clé invalide, URL erronée...).
+
+**3. Générez avec l'IA :**
 ```bash
 python tilegen.py --ai --count 10
 ```
