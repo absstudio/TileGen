@@ -1,0 +1,3 @@
+# Aucune dépendance externe requise : le projet utilise uniquement
+# la bibliothèque standard Python (random, json, csv, argparse, unicodedata).
+# Compatible Python 3.8+

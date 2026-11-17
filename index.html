@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TileGen — Générateur de noms de carreaux</title>
+<style>
+  /* ===== Thèmes ===== */
+  /* Thème clair (par défaut) : fond F2F2F2 */
+  :root, [data-theme="light"] {
+    --bg: #F2F2F2;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --accent: #b45309;
+    --accent-text: #ffffff;
+    --accent-light: #fef3c7;
+    --name-text: #92400e;
+    --border: #e0e0e0;
+    --input-bg: #ffffff;
+    --toggle-bg: #e4e4e4;
+  }
+  /* Thème sombre : fond 0F0E0E */
+  [data-theme="dark"] {
+    --bg: #0F0E0E;
+    --card: #1c1a1a;
+    --text: #F2F2F2;
+    --muted: #a3a3a3;
+    --accent: #f59e0b;
+    --accent-text: #0F0E0E;
+    --accent-light: #3a2d14;
+    --name-text: #fbbf24;
+    --border: #323030;
+    --input-bg: #262424;
+    --toggle-bg: #262424;
+  }
+  /* Suit la préférence système tant que l'utilisateur n'a pas choisi */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --bg: #0F0E0E;
+      --card: #1c1a1a;
+      --text: #F2F2F2;
+      --muted: #a3a3a3;
+      --accent: #f59e0b;
+      --accent-text: #0F0E0E;
+      --accent-light: #3a2d14;
+      --name-text: #fbbf24;
+      --border: #323030;
+      --input-bg: #262424;
+      --toggle-bg: #262424;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding: 2rem 1rem;
+    transition: background .25s ease, color .25s ease;
+  }
+  .container { max-width: 860px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 2rem; position: relative; }
+  header h1 {
+    font-size: 2rem; color: var(--accent); letter-spacing: .04em;
+  }
+  header h1 .tile { color: var(--text); }
+  header p { color: var(--muted); margin-top: .4rem; }
+
+  /* Bouton de bascule de thème (en haut à droite) */
+  .theme-toggle {
+    position: absolute; top: -0.75rem; right: 0;
+    background: var(--toggle-bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: .45rem .9rem;
+    cursor: pointer; font-size: 1.05rem; line-height: 1;
+    color: var(--text); transition: transform .15s ease;
+  }
+  .theme-toggle:hover { transform: scale(1.08); }
+
+  .controls {
+    display: flex; gap: .75rem; justify-content: center;
+    flex-wrap: wrap; margin-bottom: 1.5rem;
+  }
+  .controls input {
+    width: 90px; padding: .6rem .8rem;
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 1rem; text-align: center;
+    background: var(--input-bg); color: var(--text);
+  }
+  button {
+    padding: .6rem 1.4rem; border: none; border-radius: 8px;
+    font-size: 1rem; cursor: pointer; font-weight: 600;
+    background: var(--accent); color: var(--accent-text);
+    transition: opacity .2s;
+  }
+  button:hover { opacity: .85; }
+  button.secondary {
+    background: var(--card); color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  .catalog {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    transition: background .25s ease;
+  }
+  .catalog-item {
+    padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+    display: flex; gap: 1rem; align-items: baseline;
+  }
+  .catalog-item:last-child { border-bottom: none; }
+  .catalog-item .name {
+    font-weight: 700; letter-spacing: .06em;
+    color: var(--name-text); background: var(--accent-light);
+    padding: .2rem .6rem; border-radius: 6px;
+    min-width: 7.5rem; text-align: center; flex-shrink: 0;
+  }
+  .catalog-item .desc { color: var(--muted); font-size: .95rem; }
+  .empty { text-align: center; color: var(--muted); padding: 3rem 1rem; }
+  footer { text-align: center; margin-top: 2rem; color: var(--muted); font-size: .85rem; }
+  footer a { color: var(--accent); }
+  .stats { text-align: center; color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Basculer clair / sombre">🌙</button>
+    <h1><span class="tile">Tile</span>Gen</h1>
+    <p>Générateur de noms pour catalogue de carreaux céramiques</p>
+  </header>
+
+  <div class="controls">
+    <input type="number" id="count" value="5" min="1" max="50" title="Nombre de noms">
+    <button onclick="generate()">Générer</button>
+    <button class="secondary" onclick="resetHistory()">Réinitialiser l'historique</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="catalog" id="catalog">
+    <div class="empty">Cliquez sur « Générer » pour créer des noms de carreaux uniques.</div>
+  </div>
+
+  <footer>
+    TileGen — <a href="https://github.com">Voir le code source sur GitHub</a>
+  </footer>
+</div>
+
+<script>
+// ===== Thème clair / sombre =====
+const THEME_KEY = "tilegen_theme";
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  document.getElementById("themeToggle").textContent = theme === "dark" ? "☀️" : "🌙";
+  localStorage.setItem(THEME_KEY, theme);
+}
+function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved) { applyTheme(saved); return; }
+  // Aucun choix enregistré : suit la préférence système
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.getElementById("themeToggle").textContent = prefersDark ? "☀️" : "🌙";
+}
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme") || "light";
+  applyTheme(current === "dark" ? "light" : "dark");
+}
+initTheme();
+
+// ===== Mêmes données que tilegen.py =====
+const EXISTING_NAMES = [
+  "ARTIC","ROYAL","CASTLE","ROCA","FACADE","TERRANGA","AZAR",
+  "ARDOISE","SHERPA","SAFRAN","PLATINE","FUJI","TIGER",
+  "TRAVARTINO","ASTON","DYNAMIC","ELECTRA","FLASH","HOGGAR",
+  "MIRAGE","PLAYA","SINA MARFIL","STREET","TECHNO","VENUS",
+  "VINTAGE","VOYAGE","ARAR","BLACKOS","BREAKING","CAMEL",
+  "COSTA","DUNE","ERUPTION"
+];
+const PLACES = [
+  "PETRA","ROMA","CAIRO","PARIS","VENICE","PORTO","MILAN","VIENNA","PRAGUE",
+  "SEOUL","TOKYO","KYOTO","DELHI","DUBAI",
+  "SAHARA","ATLAS","ANDES","ALPES","NILE","CONGO","AMAZON","GOBI",
+  "TUNDRA","SIERRA","OASIS",
+  "CASTLE","PALACE","TEMPLE","TOWER","OPERA","PLAZA","ARENA",
+  "SOHO","MARAIS","BORGO","MEDINA","KASBAH"
+];
+const VINTAGE = [
+  "DECO","RETRO","LOFT","MANOR","VILLA","ROYAL","NOBLE",
+  "MARBLE","ONYX","BRASS","COPPER","SILVER","PEARL","IVORY",
+  "ARCADE","COLUMN","MOSAIC","FRESCO","VAULT","ARCH",
+  "EMPIRE","REGENT","LEGACY","CROWN","GLORY","GRAND"
+];
+const REAL_WORDS_TO_AVOID = new Set([
+  "CASTLE","PALACE","TEMPLE","TOWER","OPERA","PLAZA","ARENA","OASIS",
+  "RETRO","LOFT","VILLA","NOBLE","MARBLE","SILVER","PEARL","IVORY",
+  "ARCADE","COLUMN","MOSAIC","FRESCO","VAULT","ARCH","EMPIRE",
+  "LEGACY","CROWN","GLORY","GRAND","SOHO","TUNDRA","SIERRA","AMAZON",
+  "ROYAL","VINTAGE","DECO","REGENT","MANOR","ONYX","BRASS","COPPER"
+]);
+const STYLES = [
+  "Collection inspirée de la nature","Série évoquant la pureté des éléments",
+  "Gamme aux tons minéraux","Collection de style épuré",
+  "Série aux lignes élégantes","Gamme contemporaine raffinée"
+];
+const AMBIANCES = [
+  "pour une ambiance sereine","créant une atmosphère apaisante",
+  "apportant douceur et élégance","pour un style intemporel",
+  "offrant une touche de raffinement","créant un espace harmonieux"
+];
+const INSPIRATIONS = [
+  "Inspiré des éléments naturels","Puisant dans la beauté de la nature",
+  "S'inspirant des matières nobles","Évoquant la pureté des formes",
+  "Né de l'harmonie des éléments","Inspiré des textures naturelles"
+];
+
+const VOWELS = new Set("AEIOU");
+const CONSONANTS = new Set("BCDFGHLMNPRSTVZ");
+const STORAGE_KEY = "tilegen_noms_generes";
+const MAX_ATTEMPTS = 1000;
+
+// Persistance via localStorage (équivalent du fichier JSON en Python)
+let existingNames = new Set([...EXISTING_NAMES, ...loadHistory()]);
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
+  catch { return []; }
+}
+function saveHistory() {
+  const generated = [...existingNames].filter(n => !EXISTING_NAMES.includes(n));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(generated));
+  updateStats();
+}
+function updateStats() {
+  const count = existingNames.size - EXISTING_NAMES.length;
+  document.getElementById("stats").textContent =
+    count > 0 ? `${count} nom(s) généré(s) mémorisé(s) sur cet appareil` : "";
+}
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function randInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+
+function fromPlace() {
+  const p = pick(PLACES);
+  if (p.length > 6) {
+    const start = randInt(0, p.length - 4);
+    return p.slice(start, start + randInt(4, 6));
+  }
+  return p;
+}
+function fromVintage() {
+  const e = pick(VINTAGE);
+  if (e.length > 6) {
+    const start = randInt(0, e.length - 4);
+    return e.slice(start, start + randInt(4, 6));
+  }
+  return e;
+}
+function mixed() {
+  const p1 = pick([...PLACES, ...VINTAGE]).slice(0, randInt(2, 3));
+  const p2 = pick([...PLACES, ...VINTAGE]).slice(0, randInt(2, 3));
+  return p1 + p2;
+}
+
+function isPronounceable(name) {
+  if (name.length < 3) return false;
+  let c = 0;
+  for (const ch of name) {
+    if (CONSONANTS.has(ch)) { c++; if (c > 3) return false; }
+    else c = 0;
+  }
+  return [...name].some(ch => VOWELS.has(ch));
+}
+
+function generateName() {
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    const method = pick([fromPlace, fromVintage, mixed]);
+    const name = method();
+    if (!existingNames.has(name) && !REAL_WORDS_TO_AVOID.has(name) && isPronounceable(name)) {
+      existingNames.add(name);
+      saveHistory();
+      return name;
+    }
+  }
+  throw new Error("Aucun nom trouvé — réinitialisez l'historique.");
+}
+function generateMeaning() {
+  return `${pick(STYLES)}. ${pick(INSPIRATIONS)}, ${pick(AMBIANCES)}.`;
+}
+
+function generate() {
+  const count = parseInt(document.getElementById("count").value) || 5;
+  const catalog = document.getElementById("catalog");
+  let html = "";
+  for (let i = 0; i < count; i++) {
+    try {
+      const name = generateName();
+      html += `<div class="catalog-item"><span class="name">${name}</span><span class="desc">${generateMeaning()}</span></div>`;
+    } catch (e) {
+      html += `<div class="catalog-item"><span class="desc">${e.message}</span></div>`;
+      break;
+    }
+  }
+  catalog.innerHTML = html;
+}
+
+function resetHistory() {
+  localStorage.removeItem(STORAGE_KEY);
+  existingNames = new Set(EXISTING_NAMES);
+  updateStats();
+  document.getElementById("catalog").innerHTML =
+    '<div class="empty">Historique effacé. Cliquez sur « Générer ».</div>';
+}
+
+updateStats();
+</script>
+</body>
+</html>

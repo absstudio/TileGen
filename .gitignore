@@ -1,0 +1,21 @@
+# Fichiers Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Historique local des noms générés (spécifique à chaque machine)
+noms_generes.json
+
+# Environnement virtuel
+venv/
+.venv/
+
+# Fichiers exportés
+*.csv
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.workbuddy-ai/
