@@ -1,168 +1,164 @@
-# TileGen — Générateur de noms de carreaux céramiques
+# TileGen
 
-Outil Python qui génère des noms de produits pour un catalogue de carreaux céramiques, inspirés de lieux touristiques et d'éléments vintage, avec descriptions marketing automatiques. Chaque nom est unique, prononçable et mémorisé pour éviter les doublons entre les sessions.
+**TileGen** (Tile + Generator) est un outil qui génère des noms de produits pour un catalogue de carreaux céramiques. Il crée des noms uniques et prononçables inspirés de lieux du monde (PETRA, SAHARA, MEDINA...) et d'éléments vintage (MARBLE, EMPIRE...), et leur associe automatiquement une courte description marketing.
+
+Il est idéal pour trouver rapidement de nouveaux noms de collections sans retomber sur des noms déjà utilisés : chaque nom généré est mémorisé et ne sera jamais proposé deux fois.
 
 ---
 
-## Utilisation
+## Exemple de sortie
+
+```
+CATALOGUE DE CARREAUX CÉRAMIQUES
+================================================================================
+NOM        | DESCRIPTION
+--------------------------------------------------------------------------------
+PETBOR     | Collection de style épuré. Inspiré des textures naturelles, offrant une touche de raffinement.
+--------------------------------------------------------------------------------
+SIVI       | Gamme aux tons minéraux. Né de l'harmonie des éléments, créant un espace harmonieux.
+--------------------------------------------------------------------------------
+```
+
+---
+
+## Utiliser TileGen sans rien installer (le plus simple)
+
+Aucune installation nécessaire : ouvrez simplement la version web du générateur dans votre navigateur.
+
+**Lien : https://absstudio.github.io/TileGen/**
+
+1. Choisissez le nombre de noms à générer
+2. Cliquez sur **Générer**
+3. Les noms s'affichent avec leurs descriptions
+
+Le bouton 🌙 / ☀️ en haut à droite permet de basculer entre le thème sombre et le thème clair. Les noms déjà générés sont mémorisés par votre navigateur et le bouton « Réinitialiser l'historique » permet de repartir de zéro.
+
+---
+
+## Installer TileGen sur votre PC (version complète)
+
+### Étape 1 — Installer Python (une seule fois)
+
+TileGen fonctionne avec **Python 3.8 ou plus récent**.
+
+1. Allez sur https://www.python.org/downloads/
+2. Cliquez sur le bouton jaune **Download Python 3.x.x**
+3. Lancez le fichier téléchargé
+4. **Important** : sur le premier écran de l'installeur, cochez la case **"Add Python to PATH"** avant de cliquer sur *Install Now*
+
+### Étape 2 — Télécharger TileGen
+
+Deux possibilités :
+
+**Option A — Téléchargement simple (recommandé si vous ne connaissez pas Git)**
+1. Ouvrez https://github.com/absstudio/TileGen
+2. Cliquez sur le bouton vert **<> Code** puis **Download ZIP**
+3. Décompressez le fichier ZIP où vous voulez (par exemple dans `Documents\TileGen`)
+
+**Option B — Avec Git** (si Git est installé)
+```bash
+git clone https://github.com/absstudio/TileGen.git
+cd TileGen
+```
+
+### Étape 3 — Lancer TileGen
+
+Ouvrez un terminal **dans le dossier de TileGen** :
+- Sous Windows : ouvrez le dossier décompressé, cliquez dans la barre d'adresse en haut, tapez `cmd` puis Entrée.
+
+Puis lancez la commande :
 
 ```bash
-# Générer 20 suggestions (défaut)
 python tilegen.py
+```
 
-# Générer un nombre précis
+Vous obtenez immédiatement 20 suggestions de noms avec leurs descriptions.
+
+> **Aucune installation supplémentaire n'est nécessaire** : TileGen n'utilise que des outils inclus dans Python. Pas de `pip install` à faire.
+
+---
+
+## Comment utiliser TileGen
+
+### Générer un nombre précis de noms
+
+```bash
 python tilegen.py --count 10
+```
+Remplacez `10` par le nombre souhaité (par défaut : 20).
 
-# Exporter en CSV (ouvrable dans Excel)
+### Exporter les noms dans un fichier Excel (CSV)
+
+```bash
 python tilegen.py --count 15 --export catalogue.csv
+```
+Un fichier `catalogue.csv` est créé dans le dossier : ouvrez-le avec Excel ou LibreOffice. Il contient deux colonnes : *Nom* et *Description*.
 
-# Effacer l'historique des noms générés
+### Effacer l'historique des noms générés
+
+```bash
 python tilegen.py --reset
 ```
+TileGen mémorise chaque nom généré dans un fichier `noms_generes.json` pour ne jamais proposer deux fois le même nom. Si vous voulez repartir de zéro (par exemple pour un nouveau catalogue), utilisez cette commande.
 
-Aucune dépendance externe — Python 3.8+ suffit.
+### Afficher l'aide
 
-## Améliorations V2
+```bash
+python tilegen.py --help
+```
 
-| Amélioration | Description |
-|---|---|
-| Persistance JSON | Les noms générés sont sauvegardés dans `noms_generes.json` : jamais deux fois le même nom, même après relance |
-| Anti boucle infinie | Maximum 1000 tentatives avec message d'erreur clair |
-| Filtrage des mots réels | Les mots du dictionnaire (ARCH, RETRO, PLAZA...) ne sont plus proposés |
-| Gestion des accents | FAÇADE, É, À... correctement évalués |
-| CLI complète | `--count`, `--export`, `--reset` |
-| Page web | `index.html` : version interactive consultable en ligne via GitHub Pages |
-| Thèmes clair / sombre | La page web propose un thème clair (`#F2F2F2`) et un thème sombre (`#0F0E0E`), avec bouton de bascule et détection automatique de la préférence système |
+### Utiliser TileGen dans vos propres scripts Python
+
+```python
+from tilegen import suggest_names
+
+# 5 suggestions de noms avec descriptions
+suggestions = suggest_names(5)
+for nom, description in suggestions:
+    print(nom, "->", description)
+```
 
 ---
 
-# Guide complet : mettre à jour le projet sur GitHub
+## Dépannage
 
-## Étape 0 — Prérequis (une seule fois)
-
-1. **Créer un compte GitHub** sur [github.com](https://github.com) si ce n'est pas déjà fait.
-2. **Installer Git** : télécharger sur [git-scm.com](https://git-scm.com/downloads), installer avec les options par défaut.
-3. **Configurer son identité** (une seule fois) — ouvrir un terminal (cmd ou PowerShell) :
-
-```bash
-git config --global user.name "Votre Nom"
-git config --global user.email "votre-email@exemple.com"
-```
-
-> Utilisez l'email associé à votre compte GitHub.
-
-## Étape 1 — Créer le dépôt sur GitHub (première fois seulement)
-
-1. Aller sur [github.com/new](https://github.com/new)
-2. **Repository name** : `generator-tiziri` (par exemple)
-3. Choisir **Public** (nécessaire pour GitHub Pages gratuit)
-4. **Ne pas** cocher "Add a README" (nous en avons déjà un)
-5. Cliquer **Create repository**
-6. GitHub affiche une page avec l'URL du dépôt, par exemple :
-   `https://github.com/VOTRE-PSEUDO/generator-tiziri.git` — notez-la.
-
-## Étape 2 — Envoyer le projet pour la première fois
-
-Dans un terminal, positionnez-vous dans le dossier du projet :
-
-```bash
-cd "C:\Users\hp\Desktop\Ai\01.DEV APK\Github Project\generator_tiziri_V2-main"
-```
-
-Puis exécutez ces 4 commandes dans l'ordre :
-
-```bash
-# 1. Initialiser Git dans le dossier
-git init
-
-# 2. Préparer tous les fichiers
-git add .
-
-# 3. Créer le premier enregistrement (commit)
-git commit -m "Première version V2 du générateur"
-
-# 4. Lier le dossier local au dépôt GitHub et envoyer
-git remote add origin https://github.com/VOTRE-PSEUDO/generator-tiziri.git
-git branch -M main
-git push -u origin main
-```
-
-> À la première commande `push`, une fenêtre de connexion GitHub s'ouvre : connectez-vous. Si GitHub demande un mot de passe, il faut en réalité un **Personal Access Token** : aller sur GitHub → Settings → Developer settings → Personal access tokens → Generate new token (classic), cocher `repo`, copier le token et l'utiliser comme mot de passe.
-
-Le code est maintenant visible sur `https://github.com/VOTRE-PSEUDO/generator-tiziri`.
-
-## Étape 3 — Mettre à jour le projet (à chaque modification)
-
-Après avoir modifié un ou plusieurs fichiers, 3 commandes suffisent :
-
-```bash
-git add .
-git commit -m "Description de la modification (ex: ajout de nouveaux lieux d'inspiration)"
-git push
-```
-
-**Bonne pratique** : avant de commencer à travailler, récupérez les dernières versions avec `git pull`.
-
-## Résumé des commandes
-
-| Commande | Rôle |
+| Problème | Solution |
 |---|---|
-| `git status` | Voir les fichiers modifiés |
-| `git add .` | Préparer toutes les modifications |
-| `git commit -m "..."` | Enregistrer les modifications avec un message |
-| `git push` | Envoyer vers GitHub |
-| `git pull` | Récupérer les dernières modifications depuis GitHub |
+| `'python' n'est pas reconnu...` | Python n'est pas installé ou n'a pas été ajouté au PATH. Réinstallez Python en cochant **"Add Python to PATH"** |
+| Sous Windows, `py` fonctionne mais pas `python` | Utilisez `py tilegen.py` à la place |
+| Le fichier `catalogue.csv` s'ouvre mal | Ouvrez Excel → Données → À partir d'un fichier CSV, ou utilisez LibreOffice |
+| Message "Aucun nom valide trouvé" | L'historique est plein. Lancez `python tilegen.py --reset` |
+| Je veux retrouver un nom déjà généré | Ouvrez le fichier `noms_generes.json` : tous les noms générés y sont listés |
 
 ---
 
-# Guide : rendre le projet consultable en ligne (GitHub Pages)
+## Comment ça marche
 
-GitHub Pages publie gratuitement un site statique depuis votre dépôt. Le fichier `index.html` inclus dans ce projet devient alors une **page web interactive** où n'importe qui peut générer des noms depuis son navigateur, sans installer Python.
+TileGen combine trois méthodes de génération :
+1. **Lieux** : il tire un lieu du monde (PARIS, SAHARA, KASBAH...) et parfois le tronque (PETRA → PET) ;
+2. **Vintage** : même principe avec des éléments de design (MARBLE, MOSAIC...) ;
+3. **Mixte** : il fusionne le début de deux mots (PETRA + BORGO → PETBOR).
 
-## Activation (une seule fois, après la première push)
-
-1. Ouvrir votre dépôt sur GitHub : `https://github.com/VOTRE-PSEUDO/generator-tiziri`
-2. Cliquer sur **Settings** (onglet en haut du dépôt)
-3. Dans le menu de gauche, cliquer sur **Pages**
-4. Dans la section **Build and deployment** :
-   - **Source** : `Deploy from a branch`
-   - **Branch** : sélectionner `main` et le dossier `/ (root)`
-   - Cliquer **Save**
-5. Attendre 1 à 2 minutes. Un bandeau vert apparaît :
-   *"Your site is live at ..."*
-
-## Votre lien consultable
-
-Le site est accessible à l'adresse :
-
-```
-https://VOTRE-PSEUDO.github.io/generator-tiziri/
-```
-
-Ce lien est permanent, gratuit, et peut être partagé avec n'importe qui (collègues, clients).
-
-## Mettre à jour le site en ligne
-
-Dès que vous faites `git push` (Étape 3), GitHub Pages **met automatiquement à jour le site** en 1 à 2 minutes. Aucune manipulation supplémentaire n'est nécessaire.
-
-## Astuce : lien direct dans le README
-
-Le lien du site peut être ajouté en haut du README :
-
-```markdown
-[Ouvrir le générateur en ligne](https://VOTRE-PSEUDO.github.io/generator-tiziri/)
-```
+Chaque nom est ensuite contrôlé :
+- il ne doit pas déjà exister dans le catalogue ni dans l'historique ;
+- il ne doit pas être un mot courant du dictionnaire (ARCH, RETRO, PLAZA... sont écartés) ;
+- il doit être prononçable (maximum 3 consonnes d'affilée, au moins une voyelle).
 
 ---
 
 ## Structure du projet
 
 ```
-generator_tiziri_V2-main/
-├── tilegen.py               # Cœur du générateur (Python) — TileGen
-├── exemple_utilisation.py   # Exemple d'import du module
-├── index.html               # Version web (GitHub Pages), thèmes clair/sombre
+TileGen/
+├── tilegen.py               # Le générateur (programme principal)
+├── exemple_utilisation.py   # Exemple d'utilisation du module
+├── index.html               # Version web (site en ligne)
 ├── requirements.txt         # Aucune dépendance externe
-├── .gitignore               # Fichiers exclus de Git
 └── README.md                # Ce guide
 ```
+
+**Aucune dépendance externe** — Python 3.8+ suffit.
+
+---
+
+TileGen — créé par [absstudio](https://github.com/absstudio)
