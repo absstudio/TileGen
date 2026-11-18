@@ -414,7 +414,7 @@ def save_config(cfg):
 # Presets de fournisseurs compatibles OpenAI (nom, base_url, modèle par défaut)
 AI_PRESETS = [
     ("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
-    ("Google AI Studio (Gemini)", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"),
+    ("Google AI Studio (Gemini)", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-flash-lite-latest"),
     ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
     ("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
     ("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest"),
