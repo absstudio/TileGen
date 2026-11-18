@@ -198,6 +198,15 @@ def post_generation(suggestions):
         input(f"\n  {UI.GREY}Entrée pour continuer...{UI.RESET}")
 
 
+def show_test_result(ok, message):
+    """Affiche le résultat d'un test API (succès ou échec + indice) dans une boîte."""
+    color = UI.GREEN if ok else UI.RED
+    lines = []
+    for part in message.split("\n"):
+        lines.extend(f"{color}{seg}{UI.RESET}" for seg in wrap_text(part, 68))
+    print(box(lines, title="test API · succès" if ok else "test API · échec"))
+
+
 def ui_error(message):
     print(box([f"{UI.RED}{message}{UI.RESET}"], title="erreur"))
 
@@ -441,14 +450,16 @@ def configure_ai():
         print()
 
     cfg = load_config()
-    cfg["api_key"] = getpass.getpass(f"  {UI.ACCENT}❯{UI.RESET} Clé API {UI.GREY}(entrée masquée){UI.RESET} : ").strip()
+    raw_key = getpass.getpass(f"  {UI.ACCENT}❯{UI.RESET} Clé API {UI.GREY}(entrée masquée, collez-la sans guillemets ni espaces){UI.RESET} : ")
+    # Nettoie la clé : espaces, guillemets accidentels lors du copier-coller
+    cfg["api_key"] = raw_key.strip().strip('"').strip("'").strip()
     if not cfg["api_key"]:
         ui_error("Clé API vide : configuration annulée.")
         return False
 
     if base_url:
-        cfg["base_url"] = ask(f"Base URL {UI.GREY}[{base_url}]{UI.RESET}", base_url)
-        cfg["model"] = ask(f"Modèle {UI.GREY}[{model}]{UI.RESET}", model)
+        cfg["base_url"] = ask("Base URL", base_url)
+        cfg["model"] = ask("Modèle", model)
     else:
         cfg["base_url"] = ask("Base URL", "https://api.openai.com/v1")
         cfg["model"] = ask("Modèle", "gpt-4o-mini")
@@ -462,13 +473,26 @@ def configure_ai():
     # Test immédiat de la connexion
     if ask("Tester la connexion maintenant ?", "O").lower() in ("o", "oui", "y", "yes"):
         ok, message = test_api(cfg)
-        if ok:
-            print(box([f"{UI.GREEN}{message}{UI.RESET}"], title="test API · succès"))
-        else:
-            print(box([f"{UI.RED}{message}{UI.RESET}",
-                       f"{UI.GREY}Vérifiez la clé, la base URL et le modèle, puis reconfigurez.{UI.RESET}"],
-                      title="test API · échec"))
+        print()
+        show_test_result(ok, message)
     return True
+
+
+def _api_error_hint(code, detail):
+    """Indice de diagnostic selon le type d'erreur API."""
+    detail_lower = detail.lower()
+    if "invalid" in detail_lower and ("key" in detail_lower or "auth" in detail_lower):
+        return ("La clé est refusée par le service. Recréez-en une neuve sur le site du "
+                "fournisseur et copiez-la ENTIÈRE (souvent très longue, sans espaces ni guillemets).")
+    if code == 401:
+        return "Clé incorrecte ou expirée. Recréez une clé sur le site du fournisseur."
+    if code == 404:
+        return "Base URL ou nom de modèle incorrect. Vérifiez-les dans « Configurer l'IA »."
+    if code == 429:
+        return "Quota dépassé ou trop de requêtes. Attendez un peu ou vérifiez votre offre."
+    if code == 400:
+        return "Requête refusée : vérifiez le nom du modèle et la clé dans « Configurer l'IA »."
+    return "Vérifiez la clé, la base URL et le modèle dans « Configurer l'IA »."
 
 
 def test_api(cfg=None):
@@ -505,7 +529,7 @@ def test_api(cfg=None):
         return True, f"Connexion réussie · {model} · {latency:.1f}s · réponse : « {reply.strip()[:30]} »"
     except urllib.error.HTTPError as e:
         detail = " ".join(e.read().decode("utf-8", errors="replace").split())[:120]
-        return False, f"Erreur {e.code} : {detail}"
+        return False, f"Erreur {e.code} : {detail}\n{_api_error_hint(e.code, detail)}"
     except urllib.error.URLError as e:
         return False, f"Impossible de joindre {base_url} : {e.reason}"
     except (KeyError, json.JSONDecodeError) as e:
@@ -649,14 +673,8 @@ def interactive_session():
             print()
             ui_info("Test de la connexion IA en cours...")
             ok, message = test_api(cfg)
-            if ok:
-                print()
-                print(box([f"{UI.GREEN}{message}{UI.RESET}"], title="test API · succès"))
-            else:
-                print()
-                print(box([f"{UI.RED}{message}{UI.RESET}",
-                           f"{UI.GREY}Configurez l'IA (option 3) puis retestez.{UI.RESET}"],
-                          title="test API · échec"))
+            print()
+            show_test_result(ok, message)
             input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
 
         elif choice == "5":
@@ -699,10 +717,8 @@ def main():
     if args.test_ai:
         ui_header("test API")
         ok, message = test_api()
-        if ok:
-            print(box([f"{UI.GREEN}{message}{UI.RESET}"], title="test API · succès"))
-        else:
-            print(box([f"{UI.RED}{message}{UI.RESET}"], title="test API · échec"))
+        show_test_result(ok, message)
+        if not ok:
             sys.exit(1)
         return
 
