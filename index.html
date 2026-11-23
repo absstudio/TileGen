@@ -3,270 +3,210 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TileGen — Générateur de noms de carreaux</title>
+<title>TileGen — générateur de noms de carreaux céramiques</title>
 <style>
-  /* ===== Thèmes (identité conservée : F2F2F2 clair / 0F0E0E sombre) ===== */
-  :root, [data-theme="light"] {
-    --bg: #F2F2F2;
-    --card: #ffffff;
-    --text: #1c1917;
-    --muted: #78716c;
-    --accent: #b45309;
-    --accent-text: #ffffff;
-    --accent-soft: #fef3c7;
-    --name-text: #92400e;
-    --border: #e7e5e4;
-    --input-bg: #ffffff;
-    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.08);
+  :root {
+    --bg: #0F0E0E; --panel: #1c1a1a; --fg: #F2F2F2; --grey: #8a8a8a;
+    --accent: #f59e0b; --border: #2e2b2b;
   }
-  [data-theme="dark"] {
-    --bg: #0F0E0E;
-    --card: #1c1a1a;
-    --text: #F2F2F2;
-    --muted: #a8a29e;
-    --accent: #f59e0b;
-    --accent-text: #0F0E0E;
-    --accent-soft: #3a2d14;
-    --name-text: #fbbf24;
-    --border: #323030;
-    --input-bg: #262424;
-    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  body.light {
+    --bg: #F2F2F2; --panel: #ffffff; --fg: #27272a; --grey: #71717a;
+    --accent: #b45309; --border: #d4d4d8;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) {
-      --bg: #0F0E0E;
-      --card: #1c1a1a;
-      --text: #F2F2F2;
-      --muted: #a8a29e;
-      --accent: #f59e0b;
-      --accent-text: #0F0E0E;
-      --accent-soft: #3a2d14;
-      --name-text: #fbbf24;
-      --border: #323030;
-      --input-bg: #262424;
-      --shadow: 0 1px 2px rgba(0,0,0,.4);
-    }
-  }
-
-  /* ===== Base ===== */
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { color-scheme: light dark; }
+  html { height: 100%; }
   body {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100dvh;
-    padding: clamp(1.5rem, 4vw, 3rem) 1rem;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-  }
-  .container { max-width: 720px; margin: 0 auto; }
-
-  /* Accessibilité : focus visible partout */
-  :focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 6px;
+    min-height: 100dvh; background: var(--bg); color: var(--fg);
+    font-family: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+    font-size: 14px; line-height: 1.5;
+    display: flex; flex-direction: column; align-items: center;
+    transition: background .25s ease, color .25s ease;
+    padding: 24px 16px 0;
   }
 
-  /* ===== En-tête ===== */
-  header { margin-bottom: 2.5rem; }
-  .header-row {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: .75rem;
+  /* ---------- bouton thème ---------- */
+  #themeBtn {
+    position: fixed; top: 14px; right: 14px; z-index: 20;
+    background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 8px; width: 38px; height: 38px; cursor: pointer; font-size: 16px;
+    transition: transform .15s ease, opacity .15s ease;
   }
-  h1 {
-    font-size: clamp(1.6rem, 4vw, 2.1rem);
-    font-weight: 700;
-    text-wrap: balance;
-  }
-  h1 .gen { color: var(--accent); }
-  .theme-toggle {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: .5rem .8rem;
-    cursor: pointer;
-    font-size: 1.05rem;
-    line-height: 1;
-    transition: transform .15s ease-out;
-  }
-  .theme-toggle:hover { transform: translateY(-1px); }
-  header p {
-    color: var(--muted);
-    font-size: 1rem;
-    text-wrap: pretty;
-    max-width: 40ch;
-  }
+  #themeBtn:hover { transform: scale(1.06); }
 
-  /* ===== Barre d'actions ===== */
-  .controls {
-    display: flex; gap: .75rem; align-items: center;
-    flex-wrap: wrap;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1rem 1.25rem;
-    box-shadow: var(--shadow);
-    margin-bottom: 1.25rem;
+  /* ---------- logo pixel ---------- */
+  #logo {
+    display: flex; flex-direction: column; gap: 4px; margin-top: 28px;
   }
-  .controls label {
-    font-size: .875rem;
-    color: var(--muted);
-    font-weight: 600;
+  #logo .row { display: flex; gap: 4px; }
+  #logo .px { width: 11px; height: 11px; border-radius: 2px; }
+  #logo .px.on-tile { background: var(--grey); }
+  #logo .px.on-gen  { background: var(--fg); }
+  #logo .px.off     { background: transparent; }
+  #logo .gap { width: 6px; }
+  .accent-line {
+    margin-top: 18px; color: var(--accent); font-weight: 700; font-size: 13px;
   }
-  .controls input {
-    width: 5rem; padding: .55rem .75rem;
-    border: 1px solid var(--border); border-radius: 8px;
-    font: inherit;
-    font-variant-numeric: tabular-nums;
-    text-align: center;
-    background: var(--input-bg);
-    color: var(--text);
-  }
-  button {
-    padding: .55rem 1.25rem;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    background: var(--accent);
-    color: var(--accent-text);
-    transition: transform .15s ease-out, opacity .15s ease-out;
-  }
-  button:hover { transform: translateY(-1px); }
-  button:active { transform: translateY(0); opacity: .9; }
-  button.secondary {
-    background: transparent;
-    color: var(--accent);
-    border-color: var(--border);
-  }
+  .accent-line .dim { color: var(--grey); font-weight: 400; }
 
-  /* ===== Catalogue ===== */
-  .stats {
-    color: var(--muted);
-    font-size: .85rem;
-    font-variant-numeric: tabular-nums;
-    margin-bottom: .75rem;
-    min-height: 1.25rem;
+  /* ---------- zone terminal ---------- */
+  #term {
+    width: min(760px, 100%); flex: 1; display: flex; flex-direction: column;
+    margin-top: 30px; margin-bottom: 0;
   }
-  .catalog {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow);
-    overflow: hidden;
+  #out { flex: 1; overflow-y: auto; padding-bottom: 12px; }
+
+  .result-block { animation: fadeIn .2s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .result-block { animation: none; } }
+
+  .line-name {
+    padding: 2px 0; white-space: pre-wrap;
   }
-  .catalog-item {
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    gap: 1rem;
+  .line-name .num  { color: var(--grey); }
+  .line-name .name { color: var(--accent); font-weight: 700; }
+  .line-desc { color: var(--grey); padding-left: 4ch; white-space: pre-wrap; text-wrap: pretty; }
+  .dots { color: var(--border); overflow: hidden; white-space: nowrap; margin: 6px 0; }
+
+  .msg { color: var(--grey); padding: 4px 0; }
+  .msg.err { color: #ef4444; }
+  .msg.ok  { color: #22c55e; }
+  .sep-title { color: var(--accent); font-weight: 700; margin: 10px 0 4px; }
+
+  /* ---------- popup des commandes ---------- */
+  #popup { display: none; padding: 4px 0 6px; }
+  #popup .item {
+    display: flex; gap: 1ch; padding: 3px 8px; border-radius: 6px; cursor: pointer;
     align-items: baseline;
-    animation: item-in .15s ease-out both;
   }
-  .catalog-item:last-child { border-bottom: none; }
-  @keyframes item-in {
-    from { opacity: 0; transform: translateY(4px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  .catalog-item .name {
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--name-text);
-    background: var(--accent-soft);
-    padding: .25rem .75rem;
-    border-radius: 6px;
-    min-width: 7.5rem;
-    text-align: center;
-    flex-shrink: 0;
-  }
-  .catalog-item .desc {
-    color: var(--muted);
-    font-size: .95rem;
-    text-wrap: pretty;
-  }
+  #popup .item.sel { background: var(--panel); outline: 1px solid var(--border); }
+  #popup .c { color: var(--accent); font-weight: 700; min-width: 9ch; }
+  #popup .d { color: var(--grey); font-size: 13px; }
 
-  /* État vide : une seule action claire */
-  .empty {
-    text-align: center;
-    padding: 3.5rem 1.5rem;
-    color: var(--muted);
+  /* ---------- barre d'invite ---------- */
+  #promptBox {
+    background: var(--panel); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); border-radius: 8px;
+    padding: 10px 14px; display: flex; align-items: baseline; gap: 2ch;
   }
-  .empty .hint { margin-bottom: 1.25rem; }
+  #promptBox .arrow { color: var(--accent); font-weight: 700; }
+  #cmd {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--fg); font: inherit; caret-color: var(--accent);
+  }
+  #cmd::placeholder { color: var(--grey); opacity: .75; }
 
-  footer {
-    text-align: center;
-    margin-top: 2.5rem;
-    color: var(--muted);
-    font-size: .85rem;
-    text-wrap: pretty;
+  /* ---------- barre d'état ---------- */
+  #statusbar {
+    width: min(760px, 100%); display: flex; justify-content: space-between;
+    color: var(--grey); font-size: 12px; padding: 8px 2px 14px;
   }
-  footer a { color: var(--accent); }
+  #statusbar .keys b { color: var(--fg); font-weight: 700; }
+  #stats { font-size: 12px; }
 
-  /* Respect de prefers-reduced-motion */
-  @media (prefers-reduced-motion: reduce) {
-    * { animation: none !important; transition: none !important; }
-  }
+  ::selection { background: var(--accent); color: var(--bg); }
+  a { color: var(--accent); }
 </style>
 </head>
 <body>
-<div class="container">
-  <header>
-    <div class="header-row">
-      <h1>Tile<span class="gen">Gen</span></h1>
-      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Basculer entre le thème clair et le thème sombre" title="Basculer clair / sombre">🌙</button>
-    </div>
-    <p>Générez des noms uniques et prononçables pour votre catalogue de carreaux céramiques, avec descriptions incluses.</p>
-  </header>
 
-  <div class="controls">
-    <label for="count">Nombre</label>
-    <input type="number" id="count" value="5" min="1" max="50">
-    <button onclick="generate()">Générer</button>
-    <button class="secondary" onclick="resetHistory()">Réinitialiser l'historique</button>
+<button id="themeBtn" onclick="toggleTheme()" aria-label="Basculer le thème clair / sombre">🌙</button>
+
+<div id="logo" aria-hidden="true"></div>
+<div class="accent-line"><span class="dim">/help</span><span class="dim"> pour les commandes</span><span class="dim"> · </span>v3.2</div>
+
+<div id="term">
+  <div id="out" aria-live="polite"></div>
+
+  <div id="popup" role="listbox"></div>
+
+  <div id="promptBox">
+    <span class="arrow">❯</span>
+    <input id="cmd" type="text" autocomplete="off" spellcheck="false"
+           placeholder="Générez des noms... « 10 », /gen, /help — « / » liste les commandes"
+           aria-label="Commande TileGen">
   </div>
+</div>
 
-  <div class="stats" id="stats" aria-live="polite"></div>
-
-  <div class="catalog" id="catalog">
-    <div class="empty">
-      <div class="hint">Prêt à générer vos premiers noms de carreaux.</div>
-      <button onclick="generate()">Générer maintenant</button>
-    </div>
+<div id="statusbar">
+  <div>
+    <b style="color:var(--fg)">Local</b> · mode sans clé ·
+    <span id="stats"></span>
   </div>
-
-  <footer>
-    TileGen — <a href="https://github.com/absstudio/TileGen">Code source sur GitHub</a>
-  </footer>
+  <div class="keys">
+    <b>/help</b> commandes&nbsp;&nbsp;<b>/export</b> CSV&nbsp;&nbsp;<b>/reset</b> historique&nbsp;&nbsp;<b>/theme</b> thème
+  </div>
 </div>
 
 <script>
-// ===== Thème clair / sombre =====
-const THEME_KEY = "tilegen_theme";
+/* ============================================================
+   Logo pixel "tilegen" — tile en gris, gen en blanc (OpenCode)
+   ============================================================ */
+const PIXEL_LETTERS = {
+  t: ["###",".#.",".#.",".#.",".##"],
+  i: [".#.","...",".#.",".#.",".#."],
+  l: ["#..","#..","#..","#..","###"],
+  e: ["###","#..","###","#..","###"],
+  g: ["###","#..","#.#","#.#","###"],
+  n: ["#.#","###","#.#","#.#","#.#"],
+};
+function pixelRows(word) {
+  const rows = ["","","","",""];
+  for (const ch of word)
+    for (let r = 0; r < 5; r++) rows[r] += PIXEL_LETTERS[ch][r] + ".";
+  return rows.map(row => row.slice(0, -1));
+}
+function buildLogo() {
+  const tile = pixelRows("tile"), gen = pixelRows("gen");
+  const logo = document.getElementById("logo");
+  for (let r = 0; r < 5; r++) {
+    const row = document.createElement("div");
+    row.className = "row";
+    const addCells = (pattern, cls) => {
+      for (const c of pattern) {
+        const px = document.createElement("div");
+        px.className = "px " + (c === "#" ? "on-" + cls : "off");
+        row.appendChild(px);
+      }
+    };
+    addCells(tile[r], "tile");
+    const gap = document.createElement("div");
+    gap.className = "px gap";
+    row.appendChild(gap);
+    addCells(gen[r], "gen");
+    logo.appendChild(row);
+  }
+}
+buildLogo();
 
+/* ============================================================
+   Thème clair / sombre (#0F0E0E / #F2F2F2)
+   ============================================================ */
+const THEME_KEY = "tilegen_theme";
 function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  document.getElementById("themeToggle").textContent = theme === "dark" ? "☀️" : "🌙";
+  document.body.classList.toggle("light", theme === "light");
+  document.getElementById("themeBtn").textContent = theme === "light" ? "☀️" : "🌙";
   localStorage.setItem(THEME_KEY, theme);
 }
 function initTheme() {
   const saved = localStorage.getItem(THEME_KEY);
   if (saved) { applyTheme(saved); return; }
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  document.getElementById("themeToggle").textContent = prefersDark ? "☀️" : "🌙";
+  applyTheme(window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
 }
 function toggleTheme() {
-  const current = document.documentElement.getAttribute("data-theme") || "light";
-  applyTheme(current === "dark" ? "light" : "dark");
+  applyTheme(document.body.classList.contains("light") ? "dark" : "light");
 }
 initTheme();
 
-// ===== Mêmes données que tilegen.py =====
+/* ============================================================
+   Moteur de génération (identique à tilegen.py)
+   ============================================================ */
 const EXISTING_NAMES = [
-  "ARTIC","ROYAL","CASTLE","ROCA","FACADE","TERRANGA","AZAR",
-  "ARDOISE","SHERPA","SAFRAN","PLATINE","FUJI","TIGER",
+  "AVENIDA","BORGINO","CALCATA","CASAROZ","CERAMOS","CIVITA","DECORO",
+  "DOMUS","DORATA","ELEVAR","FERRARA","FIORINO","GIOIELLO","GRANITO",
+  "IMPALA","LUMINA","MARMO","MASTIC","MENTON","MODENA","NAPONA",
+  "ORVIEDO","PIETRA","PORTOFINO","RIVIERA","ROMANO","SABANA","SILVANA",
+  "SOLENNE","TERRAZA","TORINO","TOSCANA","VALDARNO","VENETO","VERONA",
+  "VIENNAR","ZELLIGE",
   "TRAVARTINO","ASTON","DYNAMIC","ELECTRA","FLASH","HOGGAR",
   "MIRAGE","PLAYA","SINA MARFIL","STREET","TECHNO","VENUS",
   "VINTAGE","VOYAGE","ARAR","BLACKOS","BREAKING","CAMEL",
@@ -308,13 +248,13 @@ const INSPIRATIONS = [
   "S'inspirant des matières nobles","Évoquant la pureté des formes",
   "Né de l'harmonie des éléments","Inspiré des textures naturelles"
 ];
-
 const VOWELS = new Set("AEIOU");
 const CONSONANTS = new Set("BCDFGHLMNPRSTVZ");
 const STORAGE_KEY = "tilegen_noms_generes";
 const MAX_ATTEMPTS = 1000;
 
 let existingNames = new Set([...EXISTING_NAMES, ...loadHistory()]);
+let lastResults = [];
 
 function loadHistory() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
@@ -355,7 +295,6 @@ function mixed() {
   const p2 = pick([...PLACES, ...VINTAGE]).slice(0, randInt(2, 3));
   return p1 + p2;
 }
-
 function isPronounceable(name) {
   if (name.length < 3) return false;
   let c = 0;
@@ -365,7 +304,6 @@ function isPronounceable(name) {
   }
   return [...name].some(ch => VOWELS.has(ch));
 }
-
 function generateName() {
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
     const method = pick([fromPlace, fromVintage, mixed]);
@@ -376,35 +314,185 @@ function generateName() {
       return name;
     }
   }
-  throw new Error("Aucun nom trouvé — réinitialisez l'historique.");
+  throw new Error("Aucun nom trouvé — /reset pour repartir de zéro.");
 }
 function generateMeaning() {
   return `${pick(STYLES)}. ${pick(INSPIRATIONS)}, ${pick(AMBIANCES)}.`;
 }
 
-function generate() {
-  const count = parseInt(document.getElementById("count").value) || 5;
-  const catalog = document.getElementById("catalog");
-  let html = "";
-  for (let i = 0; i < count; i++) {
-    try {
-      const name = generateName();
-      html += `<div class="catalog-item"><span class="name">${name}</span><span class="desc">${generateMeaning()}</span></div>`;
-    } catch (e) {
-      html += `<div class="catalog-item"><span class="desc">${e.message}</span></div>`;
-      break;
-    }
-  }
-  catalog.innerHTML = html;
+/* ============================================================
+   Sortie façon console
+   ============================================================ */
+const out = document.getElementById("out");
+function scrollBottom() { out.scrollTop = out.scrollHeight; }
+
+function printResults(suggestions) {
+  const block = document.createElement("div");
+  block.className = "result-block";
+  block.innerHTML = `<div class="sep-title">╭─ suggestions · ${suggestions.length}</div>`;
+  suggestions.forEach(([name, desc], i) => {
+    const n = document.createElement("div");
+    n.className = "line-name";
+    n.innerHTML =
+      `<span class="num">${String(i + 1).padStart(2, " ")}.</span> ` +
+      `<span class="name">${name.padEnd(10, " ")}</span>` +
+      `<span class="line-desc" style="display:inline">${desc}</span>`;
+    block.appendChild(n);
+    const dots = document.createElement("div");
+    dots.className = "dots";
+    dots.textContent = "·".repeat(76);
+    if (i < suggestions.length - 1) block.appendChild(dots);
+  });
+  out.appendChild(block);
+  scrollBottom();
+}
+function printMsg(text, cls = "msg") {
+  const d = document.createElement("div");
+  d.className = `result-block ${cls}`;
+  d.textContent = text;
+  out.appendChild(d);
+  scrollBottom();
 }
 
-function resetHistory() {
+/* ============================================================
+   Commandes slash (comme la console tilegen.py)
+   ============================================================ */
+const COMMANDS = [
+  { cmd: "/gen",    desc: "générer n noms en local (aucune clé requise)" },
+  { cmd: "/export", desc: "exporter les derniers résultats en CSV" },
+  { cmd: "/theme",  desc: "basculer thème clair / sombre" },
+  { cmd: "/reset",  desc: "effacer l'historique des noms générés" },
+  { cmd: "/clear",  desc: "nettoyer l'écran" },
+  { cmd: "/help",   desc: "afficher cette aide" },
+];
+
+function runGen(count) {
+  const suggestions = [];
+  for (let i = 0; i < count; i++) {
+    try { suggestions.push([generateName(), generateMeaning()]); }
+    catch (e) { printMsg(e.message, "msg err"); break; }
+  }
+  if (suggestions.length) {
+    lastResults = suggestions;
+    printResults(suggestions);
+  }
+}
+function runExport() {
+  if (!lastResults.length) { printMsg("Aucun résultat à exporter — générez d'abord des noms (/gen 10).", "msg err"); return; }
+  const rows = ["Nom;Description",
+    ...lastResults.map(([n, d]) => `${n};${d.replace(/;/g, ",")}`)].join("\r\n");
+  const blob = new Blob(["\ufeff" + rows], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "catalogue.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  printMsg(`Export CSV réussi : catalogue.csv (${lastResults.length} noms).`, "msg ok");
+}
+function runReset() {
   localStorage.removeItem(STORAGE_KEY);
   existingNames = new Set(EXISTING_NAMES);
   updateStats();
-  document.getElementById("catalog").innerHTML =
-    '<div class="empty"><div class="hint">Historique effacé.</div><button onclick="generate()">Générer maintenant</button></div>';
+  printMsg("Historique des noms générés effacé.", "msg ok");
 }
+function runHelp() {
+  const block = document.createElement("div");
+  block.className = "result-block";
+  block.innerHTML = `<div class="sep-title">╭─ commandes</div>`;
+  for (const { cmd, desc } of COMMANDS) {
+    const d = document.createElement("div");
+    d.className = "line-name";
+    d.innerHTML = `<span class="name">${cmd.padEnd(9, " ")}</span><span class="line-desc" style="display:inline">${desc}</span>`;
+    block.appendChild(d);
+  }
+  const tip = document.createElement("div");
+  tip.className = "msg";
+  tip.textContent = "Astuce : un simple nombre (ex. 10) génère aussi des noms.";
+  block.appendChild(tip);
+  out.appendChild(block);
+  scrollBottom();
+}
+function runCommand(raw) {
+  const input = raw.trim();
+  if (!input) return;
+  if (/^\d+$/.test(input)) return runGen(Math.min(parseInt(input, 10), 100));
+  const [cmd, arg] = input.split(/\s+/, 2);
+  switch (cmd.toLowerCase()) {
+    case "/gen": {
+      const n = parseInt(arg, 10) || 20;
+      if (n < 1 || n > 100) { printMsg("Usage : /gen [nombre entre 1 et 100] — ex. /gen 10", "msg err"); return; }
+      runGen(n); return;
+    }
+    case "/export": runExport(); return;
+    case "/theme":  toggleTheme(); return;
+    case "/reset":  runReset(); return;
+    case "/clear":  out.innerHTML = ""; return;
+    case "/help":   runHelp(); return;
+    default:
+      const close = COMMANDS.filter(c => c.cmd.startsWith(cmd.toLowerCase()));
+      if (close.length) {
+        printMsg(`Commande inconnue : ${cmd} — vouliez-vous dire : ${close.map(c => c.cmd).join(", ")}`, "msg err");
+      } else {
+        printMsg(`Commande inconnue : ${cmd} — tapez /help pour la liste.`, "msg err");
+      }
+  }
+}
+
+/* ============================================================
+   Popup live des commandes pendant la frappe (façon OpenCode)
+   ============================================================ */
+const input = document.getElementById("cmd");
+const popup = document.getElementById("popup");
+let selIndex = -1;
+
+function matchesFor(text) {
+  const token = text.trim().toLowerCase();
+  if (!token.startsWith("/") || token.includes(" ")) return [];
+  return COMMANDS.filter(c => c.cmd.startsWith(token));
+}
+function renderPopup(matches) {
+  popup.innerHTML = "";
+  if (!matches.length) { popup.style.display = "none"; selIndex = -1; return; }
+  popup.style.display = "block";
+  matches.forEach((m, i) => {
+    const item = document.createElement("div");
+    item.className = "item" + (i === selIndex ? " sel" : "");
+    item.innerHTML = `<span class="c">${m.cmd}</span><span class="d">${m.desc}</span>`;
+    item.onclick = () => { input.value = m.cmd + " "; hidePopup(); input.focus(); };
+    popup.appendChild(item);
+  });
+}
+function hidePopup() { popup.style.display = "none"; popup.innerHTML = ""; selIndex = -1; }
+
+input.addEventListener("input", () => {
+  selIndex = -1;
+  renderPopup(matchesFor(input.value));
+});
+input.addEventListener("keydown", (e) => {
+  const matches = matchesFor(input.value);
+  if (e.key === "Tab" && matches.length) {
+    e.preventDefault();
+    if (matches.length === 1) input.value = matches[0].cmd + " ";
+    else {
+      let prefix = matches[0].cmd;
+      for (const m of matches.slice(1))
+        while (!m.cmd.startsWith(prefix)) prefix = prefix.slice(0, -1);
+      input.value = prefix;
+    }
+    renderPopup(matchesFor(input.value));
+    return;
+  }
+  if (popup.style.display === "block") {
+    if (e.key === "ArrowDown") { e.preventDefault(); selIndex = (selIndex + 1) % matches.length; renderPopup(matches); return; }
+    if (e.key === "ArrowUp")   { e.preventDefault(); selIndex = (selIndex - 1 + matches.length) % matches.length; renderPopup(matches); return; }
+    if (e.key === "Escape")    { hidePopup(); return; }
+  }
+  if (e.key === "Enter") {
+    hidePopup();
+    runCommand(input.value);
+    input.value = "";
+  }
+});
 
 updateStats();
 </script>
