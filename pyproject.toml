@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tilegen"
+version = "3.2.0"
+description = "TileGen - generateur de noms de carreaux ceramiques, console façon OpenCode"
+requires-python = ">=3.8"
+
+[project.scripts]
+tilegen = "tilegen:main"
+
+[tool.setuptools]
+py-modules = ["tilegen"]

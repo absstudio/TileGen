@@ -6,6 +6,68 @@ Il est idéal pour trouver rapidement de nouveaux noms de collections sans retom
 
 ---
 
+## ⚡ Quick Start
+
+**Prérequis** — c'est tout :
+- [Python 3.8+](https://www.python.org/downloads/) (aucune dépendance externe : TileGen n'utilise que la bibliothèque standard)
+
+> [!TIP]
+> Sous Windows, cochez **« Add Python to PATH »** pendant l'installation de Python.
+
+### Option A — Lancement en 1 commande (recommandé)
+
+**Windows (PowerShell)** :
+```powershell
+.\quickstart.ps1
+```
+
+**Linux / macOS** :
+```bash
+./quickstart.sh
+```
+
+Le script vérifie Python, teste le démarrage et installe la commande globale `tilegen` (optionnel, non bloquant).
+
+### Option B — Installation manuelle
+
+```bash
+# 1. Récupérer le projet
+git clone https://github.com/absstudio/TileGen.git
+cd TileGen
+
+# 2. Lancer — c'est déjà installé, il n'y a rien d'autre à faire
+python tilegen.py
+```
+
+*(Optionnel : enregistrez la commande globale avec `python -m pip install -e .` — ensuite `tilegen` fonctionne depuis n'importe quel terminal.)*
+
+### Vérification rapide ("It works!")
+
+Au lancement, cette console s'affiche — le programme tourne :
+
+```
+    ██████    ██    ██      ██████  ██████  ██████  ██  ██
+      ██            ██      ██      ██      ██      ██████
+      ██      ██    ██      ██████  ██  ██  ██████  ██  ██
+      ██      ██    ██      ██      ██  ██  ██      ██  ██
+      ████    ██    ██████  ██████  ██████  ██████  ██  ██
+
+              /help pour les commandes  ·  v3.2
+
+  ▌   Générez des noms... « 10 », /model, /help — Tab pour compléter
+  ▌   Local · mode sans clé · /model pour l'IA
+
+  ❯ 
+```
+
+Test direct sans console interactive :
+```bash
+python tilegen.py --count 2
+```
+Sortie attendue : deux noms uniques avec leurs descriptions (ex. `KYONO — Évoque Kyoto...`). C'est tout : aucune clé API, aucun fichier de configuration n'est requis pour démarrer.
+
+---
+
 ## Exemple de sortie
 
 ```
@@ -72,13 +134,47 @@ Puis lancez la commande :
 python tilegen.py
 ```
 
-Une **page d'accueil interactive** s'affiche (inspirée de l'interface d'OpenCode) : logo, menu de navigation et paramètres. Vous choisissez :
+#### Option : la commande `tilegen` partout dans le terminal
 
-1. **Générer des noms** — mode local, aucune clé nécessaire (le programme demande le nombre de noms souhaité) ;
-2. **Générer avec l'IA** — si vous avez configuré une clé API ;
-3. **Configurer l'IA** — clé API, base URL et modèle ;
-4. **Effacer l'historique** — repartir de zéro ;
-`q` pour quitter. Après chaque génération : `Entrée` pour revenir au menu, `e` pour exporter en CSV.
+Si Python est déjà installé, vous pouvez enregistrer TileGen comme commande globale — ensuite, **plus besoin d'aller dans le dossier** : tapez simplement `tilegen` depuis n'importe quel terminal :
+
+```bash
+cd Chemin/vers/TileGen-main
+python -m pip install -e .
+```
+
+Puis, où que vous soyez :
+
+```bash
+tilegen              # ouvre la console TileGen
+tilegen --count 10   # génération directe de 10 noms
+tilegen --help       # aide
+```
+
+La commande reste à jour automatiquement : elle lit les fichiers du dossier où TileGen est installé.
+
+Une **console interactive** s'affiche (inspirée du terminal d'OpenCode) : logo TILEGEN en orange, barre de statut IA et invite de commande. Vous tapez des commandes comme dans un terminal moderne :
+
+```
+╭──────────────────────────────────────────────────────────╮
+│ ia : non configurée  (/model pour démarrer)              │
+╰──────────────────────────────────────────────────────────╯
+  ❯ 
+```
+
+- **Un nombre** (ex. `10`) — génère 10 noms en local, aucune clé nécessaire ;
+- `/model` — choisir le fournisseur d'IA et son modèle (OpenAI, Google AI Studio/Gemini, DeepSeek, Groq, Mistral) ;
+- `/key` — saisir ou changer la clé API ;
+- `/test` — vérifier que la connexion IA fonctionne ;
+- `/gen 20` — générer 20 noms en local ;
+- `/ai 10` — générer 10 noms avec l'IA ;
+- `/export` — exporter les derniers résultats en CSV ;
+- `/reset` — effacer l'historique ;
+- `/clear` — nettoyer l'écran ;
+- `/help` — liste des commandes ;
+- `/exit` — quitter.
+
+Après chaque génération : `Entrée` pour revenir à l'invite, `e` pour exporter en CSV, `q` pour retourner au menu principal.
 
 > **Aucune installation supplémentaire n'est nécessaire** : TileGen n'utilise que des outils inclus dans Python. Pas de `pip install` à faire.
 
@@ -117,29 +213,26 @@ python tilegen.py --help
 
 TileGen peut aussi générer des noms avec une intelligence artificielle. Cela nécessite une clé API d'un service compatible OpenAI (OpenAI, DeepSeek, Groq, Mistral...). **Sans clé API, le mode local fonctionne parfaitement** — l'IA est une option.
 
-**1. Configurez une seule fois :**
-```bash
-python tilegen.py --configure-ai
-```
-Le programme vous demande de choisir votre **fournisseur** dans une liste (la base URL et le modèle sont remplis automatiquement) :
+**1. Configurez une seule fois** — lancez `python tilegen.py` puis tapez `/model` :
+- **Étape 1/2** : choisissez votre **fournisseur** (la base URL est remplie automatiquement) ;
+- **Étape 2/2** : choisissez le **modèle**, collez votre clé API quand elle est demandée.
 
-| # | Fournisseur | Modèle par défaut |
+| # | Fournisseur | Modèles proposés |
 |---|---|---|
-| 1 | OpenAI | gpt-4o-mini |
-| 2 | **Google AI Studio (Gemini)** | gemini-2.0-flash |
+| 1 | OpenAI | gpt-4o-mini, gpt-4o... |
+| 2 | **Google AI Studio (Gemini)** | gemini-flash-lite-latest, gemini-flash-latest, gemini-3.8-flash |
 | 3 | DeepSeek | deepseek-chat |
 | 4 | Groq | llama-3.3-70b-versatile |
 | 5 | Mistral | mistral-small-latest |
 | 6 | Autre / personnalisé | libre |
 
-> Pour **Google AI Studio** : clé gratuite sur [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (bouton *Get API key* → *Create API key*). Collez-la quand le programme la demande (saisie masquée), puis lancez le test de connexion.
+> Pour **Google AI Studio** : clé gratuite sur [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (bouton *Get API key* → *Create API key*). Collez-la quand le programme la demande (saisie masquée).
 
 **2. Testez que ça marche :**
-- directement après la configuration (le programme propose « Tester la connexion maintenant ? ») ;
-- ou plus tard via le menu principal → **4. Tester l'API** ;
+- tapez `/test` dans la console — le résultat affiche `Connexion réussie · modèle · temps · réponse : « OK »` ou la **cause précise** de l'échec (clé invalide, URL erronée, quota dépassé...) ;
 - ou en ligne de commande : `python tilegen.py --test-ai`.
 
-Le test envoie une requête minimale au service et affiche le résultat : `Connexion réussie · gemini-2.0-flash · 1.2s · réponse : « OK »` ou la cause précise de l'échec (clé invalide, URL erronée...).
+Le test envoie une requête minimale au service et affiche le résultat : `Connexion réussie · gemini-flash-lite-latest · 1.2s · réponse : « OK »` ou la cause précise de l'échec (clé invalide, URL erronée...).
 
 **3. Générez avec l'IA :**
 ```bash

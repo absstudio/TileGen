@@ -20,6 +20,7 @@ import os
 import random
 import re
 import sys
+import textwrap
 import time
 import unicodedata
 import urllib.error
@@ -29,7 +30,7 @@ from pathlib import Path
 GENERATED_NAMES_FILE = Path(__file__).parent / "noms_generes.json"
 CONFIG_FILE = Path(__file__).parent / "tilegen_config.json"
 MAX_ATTEMPTS = 1000
-VERSION = "3.1"
+VERSION = "3.2"
 
 # ============================================================
 #  Interface terminal — style OpenCode
@@ -108,23 +109,207 @@ def ui_header(mode):
 
 
 def home_screen():
-    """Page d'accueil interactive façon OpenCode : logo + menu."""
+    """Splash screen façon OpenCode : logo pixel, ligne d'accent, invite."""
     clear_screen()
-    width = 66
     print()
-    for line in LOGO:
-        pad = (width - len(line)) // 2
-        print(" " * pad + UI.ACCENT + UI.BOLD + line + UI.RESET)
+
+    # ----- logo pixel "tilegen" (gris "tile" + blanc "gen", comme opencode) -----
+    logo = build_pixel_logo()
+    logo_width = max(_visible_len(l) for l in logo)
+    pad = max((logo_width + 8 - logo_width) // 2, 0)
+    for line in logo:
+        print(" " * pad + line)
     print()
-    subtitle = f"{UI.GREY}v{VERSION}  ·  générateur de noms de carreaux céramiques{UI.RESET}"
-    print(subtitle.center(width + 10))
+
+    # ----- ligne d'accent orange (comme "/update to install v2.3.2") -----
+    hint = (f"{UI.ACCENT}{UI.BOLD}/help{UI.RESET}{UI.GREY} pour les commandes{UI.RESET}"
+            f"{UI.GREY}  ·  v{VERSION}{UI.RESET}")
+    print(" " * max((logo_width + 8 - _visible_len(hint)) // 2, 0) + hint)
     print()
-    print(box(
-        [f"{UI.GREY}Lancez {UI.RESET}{UI.TEXT}python tilegen.py --help{UI.RESET}{UI.GREY} "
-         f"pour les options directes{UI.RESET}"],
-        width=width + 4,
-    ))
     print()
+
+    # ----- boîte d'invite avec barre d'accent à gauche -----
+    bar = f"{UI.ACCENT}▌{UI.RESET}"
+    print(f"  {bar}   {UI.GREY}Générez des noms... « 10 », {UI.RESET}{UI.TEXT}/model{UI.RESET}"
+          f"{UI.GREY}, {UI.RESET}{UI.TEXT}/help{UI.RESET}{UI.GREY} — Tab pour compléter{UI.RESET}")
+    print(f"  {bar}   {UI.TEXT}Local{UI.RESET}{UI.GREY} · mode sans clé · "
+          f"{UI.RESET}{UI.TEXT}/model{UI.RESET}{UI.GREY} pour l'IA{UI.RESET}")
+    print()
+
+    # ----- raccourcis en bas à droite (comme "shift+tab agents  ctrl+p commands") -----
+    shortcuts = (f"{UI.TEXT}{UI.BOLD}/help{UI.RESET}{UI.GREY} commandes{UI.RESET}   "
+                 f"{UI.TEXT}{UI.BOLD}/model{UI.RESET}{UI.GREY} IA{UI.RESET}   "
+                 f"{UI.TEXT}{UI.BOLD}/exit{UI.RESET}{UI.GREY} quitter{UI.RESET}")
+    print(" " * max(72 - _visible_len(shortcuts), 0) + shortcuts)
+    print()
+
+
+# ----- police pixel 3x5 pour le splash (comme le logo d'OpenCode) -----
+_PIXEL_LETTERS = {
+    "t": ["###", ".#.", ".#.", ".#.", ".##"],
+    "i": [".#.", "...", ".#.", ".#.", ".#."],
+    "l": ["#..", "#..", "#..", "#..", "###"],
+    "e": ["###", "#..", "###", "#..", "###"],
+    "g": ["###", "#..", "#.#", "#.#", "###"],
+    "n": ["#.#", "###", "#.#", "#.#", "#.#"],
+}
+
+
+def _pixel_rows(word):
+    """Assemble les 5 lignes de pixels d'un mot (1 colonne vide entre lettres)."""
+    rows = [""] * 5
+    for c in word:
+        for r in range(5):
+            rows[r] += _PIXEL_LETTERS[c][r] + "."
+    return [row[:-1] for row in rows]  # retire la séparation finale
+
+
+def build_pixel_logo():
+    """Construit le logo 'tilegen' : 'tile' en gris, 'gen' en blanc (façon opencode)."""
+    tile = _pixel_rows("tile")
+    gen = _pixel_rows("gen")
+    lines = []
+    for r in range(5):
+        left = (UI.GREY + UI.BOLD + tile[r].replace("#", "██").replace(".", "  ") + UI.RESET)
+        right = (UI.TEXT + UI.BOLD + gen[r].replace("#", "██").replace(".", "  ") + UI.RESET)
+        lines.append(left + "  " + right)
+    return lines
+
+
+def ia_status_line():
+    """Ligne d'état IA façon OpenCode (fournisseur · modèle · clé)."""
+    cfg = load_config()
+    if not cfg.get("model"):
+        return f"{UI.GREY}ia : non configurée  ({UI.RESET}{UI.TEXT}/model{UI.RESET}{UI.GREY} pour démarrer){UI.RESET}"
+    key_ok = "clé ok" if (os.environ.get("TILEGEN_API_KEY") or cfg.get("api_key")) else "clé manquante"
+    return (f"{UI.GREY}ia : {UI.RESET}{UI.TEXT}{cfg.get('model')}{UI.RESET}"
+            f"{UI.GREY} · {key_ok}  ({UI.RESET}{UI.TEXT}/model{UI.RESET}{UI.GREY} pour changer){UI.RESET}")
+
+
+HELP_ITEMS = [
+    ("/model", "choisir le fournisseur et le modèle d'IA"),
+    ("/key", "saisir ou changer la clé API"),
+    ("/test", "tester la connexion à l'API"),
+    ("/gen [n]", "générer n noms en local (aucune clé requise)"),
+    ("/ai [n]", "générer n noms avec l'IA"),
+    ("/export", "exporter les derniers résultats en CSV"),
+    ("/reset", "effacer l'historique des noms générés"),
+    ("/clear", "nettoyer l'écran"),
+    ("/help", "afficher cette aide"),
+    ("/exit", "quitter TileGen"),
+]
+
+
+def show_help():
+    lines = []
+    for cmd, desc in HELP_ITEMS:
+        lines.append(f"  {UI.ACCENT}{UI.BOLD}{cmd:<10}{UI.RESET} {UI.GREY}{desc}{UI.RESET}")
+    print(box(lines, title="commandes"))
+
+
+# Noms de commandes simples (sans "[n]") pour l'autocomplétion
+COMMAND_BASES = [cmd.split()[0] for cmd, _ in HELP_ITEMS]
+COMMAND_DESCRIPTIONS = {cmd.split()[0]: desc for cmd, desc in HELP_ITEMS}
+_COMMANDS_WITH_ARG = {"/gen", "/ai"}
+
+
+def _popup_suggestions(matches):
+    """Liste de suggestions façon OpenCode (au-dessus de l'invite)."""
+    for cmd, desc in HELP_ITEMS:
+        base = cmd.split()[0]
+        if base in matches:
+            print(f"  {UI.ACCENT}{UI.BOLD}{base:<9}{UI.RESET} {UI.GREY}{desc}{UI.RESET}")
+
+
+_PROMPT = f"  {UI.ACCENT}❯{UI.RESET} "
+_PROMPT_VISIBLE_LEN = 4  # «  » + « ❯ » + « »
+
+
+def _matches_for(buffer):
+    """Commandes correspondant à ce qui est tapé (popup en direct)."""
+    token = buffer.strip().lower()
+    if not token.startswith("/") or " " in token:
+        return []
+    return [c for c in COMMAND_BASES if c.startswith(token)]
+
+
+def _redraw_line(buffer, matches, prev_popup):
+    """Réaffiche l'invite + le buffer + le popup live sous la ligne (façon OpenCode).
+
+    Le curseur est replacé sur la ligne d'invite après le popup. Renvoie le
+    nombre de lignes de popup affichées (pour l'effacement suivant).
+    """
+    count = max(len(matches), prev_popup)
+    sys.stdout.write("\x1b[2K\r" + _PROMPT + buffer)
+    for i in range(count):
+        sys.stdout.write("\n\x1b[2K")
+        if i < len(matches):
+            base = matches[i]
+            sys.stdout.write(f"  {UI.ACCENT}{UI.BOLD}{base:<9}{UI.RESET} "
+                             f"{UI.GREY}{COMMAND_DESCRIPTIONS[base]}{UI.RESET}")
+    if count:
+        sys.stdout.write(f"\x1b[{count}A")       # remonter sur la ligne d'invite
+    sys.stdout.write(f"\r\x1b[{_PROMPT_VISIBLE_LEN + len(buffer)}C")
+    sys.stdout.flush()
+    return len(matches)
+
+
+def _read_line_tab():
+    """Lecture clavier temps réel (Windows) avec popup live dès que « / » est tapé.
+
+    Tapez « / » : les commandes s'affichent immédiatement et se filtrent
+    pendant la frappe. Tab complète un nom unique ; Entrée valide.
+    """
+    import msvcrt
+    sys.stdout.write(_PROMPT)
+    sys.stdout.flush()
+    buffer = ""
+    popup = 0                                    # lignes de popup actuellement affichées
+    while True:
+        ch = msvcrt.getwch()
+        if ch in ("\r", "\n"):                   # Entrée : valider
+            sys.stdout.write("\n\x1b[2K" * popup)
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return buffer.strip()
+        if ch in ("\x00", "\xe0"):               # flèches / touches spéciales
+            msvcrt.getwch()
+            continue
+        if ch == "\x03":                         # Ctrl+C
+            raise KeyboardInterrupt
+        if ch == "\x08":                         # Retour arrière
+            if buffer:
+                buffer = buffer[:-1]
+            popup = _redraw_line(buffer, _matches_for(buffer), popup)
+            continue
+        if ch == "\t":                           # Tab : complète un nom unique
+            matches = _matches_for(buffer)
+            if len(matches) == 1:
+                buffer = matches[0] + (" " if matches[0] in _COMMANDS_WITH_ARG else "")
+            elif len(matches) > 1:
+                # préfixe commun le plus long entre les correspondances
+                prefix = matches[0]
+                for m in matches[1:]:
+                    while not m.startswith(prefix):
+                        prefix = prefix[:-1]
+                buffer = prefix
+            popup = _redraw_line(buffer, _matches_for(buffer), popup)
+            continue
+        if ch.isprintable():                     # caractère normal → popup live
+            buffer += ch
+            popup = _redraw_line(buffer, _matches_for(buffer), popup)
+
+
+def command_prompt():
+    """Invite façon OpenCode : barre d'accent + statut IA + autocomplétion Tab."""
+    print()
+    print(f"  {UI.ACCENT}▌{UI.RESET}   {ia_status_line()}")
+    if sys.stdin.isatty() and os.name == "nt":
+        try:
+            return _read_line_tab()
+        except ImportError:
+            pass
+    return input(f"  {UI.ACCENT}❯{UI.RESET} ").strip()
 
 
 def ask(prompt, default=""):
@@ -132,6 +317,19 @@ def ask(prompt, default=""):
     suffix = f" {UI.GREY}[{default}]{UI.RESET}" if default != "" else ""
     value = input(f"  {UI.ACCENT}❯{UI.RESET} {prompt}{suffix} : ").strip()
     return value or default
+
+
+def ask_secret(prompt):
+    """Saisie masquée si l'entrée est un vrai terminal, saisie normale sinon.
+
+    getpass peut bloquer indéfiniment lorsque stdin n'est pas un TTY
+    (entrée canalisée, lanceur automatisé) : on détecte ce cas et on
+    retombe sur input() pour éviter tout blocage.
+    """
+    if sys.stdin is not None and sys.stdin.isatty():
+        return getpass.getpass(prompt)
+    # Fallback : saisie visible (mais sans écho du prompt en double)
+    return input(prompt)
 
 
 def ask_count():
@@ -144,24 +342,6 @@ def ask_count():
         except ValueError:
             pass
         ui_error("Entrez un nombre entre 1 et 100.")
-
-
-def ui_menu():
-    """Menu principal, sélection par numéro."""
-    items = [
-        ("1", "Générer des noms", "mode local, aucune clé nécessaire"),
-        ("2", "Générer avec l'IA", "clé API requise (OpenAI, Gemini...)"),
-        ("3", "Configurer l'IA", "fournisseur, clé API, modèle"),
-        ("4", "Tester l'API", "vérifier que la connexion IA marche"),
-        ("5", "Effacer l'historique", "repartir de zéro"),
-        ("q", "Quitter", ""),
-    ]
-    lines = []
-    for key, label, hint in items:
-        lines.append(f"  {UI.ACCENT}{UI.BOLD}{key}{UI.RESET}. {UI.TEXT}{label:<22}{UI.RESET}"
-                     f"{UI.GREY}{hint}{UI.RESET}")
-    print(box(lines, title="menu"))
-    return input(f"\n  {UI.ACCENT}❯{UI.RESET} ").strip().lower()
 
 
 def ui_results(suggestions, mode):
@@ -416,70 +596,232 @@ def save_config(cfg):
 
 
 # Presets de fournisseurs compatibles OpenAI (nom, base_url, modèle par défaut)
-AI_PRESETS = [
-    ("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
-    ("Google AI Studio (Gemini)", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-flash-lite-latest"),
-    ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
-    ("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
-    ("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest"),
-    ("Autre / personnalisé", "", ""),
-]
+# Fournisseurs compatibles OpenAI : base_url + modèles proposés par /model
+AI_PROVIDERS = {
+    "OpenAI": {
+        "base_url": "https://api.openai.com/v1",
+        "models": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
+        "key_url": "https://platform.openai.com/api-keys",
+    },
+    "Google AI Studio (Gemini)": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "models": ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.8-flash"],
+        "key_url": "https://aistudio.google.com/apikey",
+    },
+    "DeepSeek": {
+        "base_url": "https://api.deepseek.com/v1",
+        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "key_url": "https://platform.deepseek.com",
+    },
+    "Groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+        "key_url": "https://console.groq.com/keys",
+    },
+    "Mistral": {
+        "base_url": "https://api.mistral.ai/v1",
+        "models": ["mistral-small-latest", "mistral-medium-latest"],
+        "key_url": "https://console.mistral.ai/api-keys",
+    },
+    "Autre / personnalisé": {
+        "base_url": "",
+        "models": [],
+        "key_url": "",
+    },
+}
 
 
-def configure_ai():
-    """Configuration interactive : choix du fournisseur, clé API, puis test."""
-    lines = [
-        f"{UI.TEXT}Choisissez votre fournisseur IA (compatible OpenAI) :{UI.RESET}",
-        "",
-    ]
-    for i, (name, _, model) in enumerate(AI_PRESETS, 1):
-        hint = f"{UI.GREY}{model}{UI.RESET}" if model else f"{UI.GREY}base URL et modèle libres{UI.RESET}"
-        lines.append(f"  {UI.ACCENT}{UI.BOLD}{i}{UI.RESET}. {UI.TEXT}{name:<28}{UI.RESET}{hint}")
-    print(box(lines, title="configuration IA"))
-    print()
+# Modèles à écarter de la liste "autorités" : non conversationnels
+_NON_CHAT_HINTS = ("embedding", "aio", "imagen", "veo", "tts", "whisper", "moderation", "dprim")
 
-    choice = ask("Fournisseur", "1")
+
+def fetch_models(api_key, base_url):
+    """Interroge GET {base_url}/models : liste des modèles autorisés par la clé.
+
+    Endpoint standard du protocole OpenAI, supporté par Google AI Studio,
+    OpenAI, DeepSeek, Groq, Mistral... Les modèles non conversationnels
+    (embeddings, images, audio) sont écartés de la liste.
+    """
+    url = base_url.rstrip("/") + "/models"
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        method="GET",
+    )
     try:
-        preset = AI_PRESETS[int(choice) - 1]
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        ids = [str(m.get("id", "")).strip() for m in data.get("data", []) if m.get("id")]
+        # Google renvoie des id du type "models/gemini-..." : on nettoie le préfixe
+        ids = [m.replace("models/", "") for m in ids]
+        chat = sorted(m for m in ids if not any(h in m.lower() for h in _NON_CHAT_HINTS))
+        return chat, None
+    except urllib.error.HTTPError as e:
+        detail = " ".join(e.read().decode("utf-8", errors="replace").split())[:120]
+        return None, f"Erreur {e.code} : {detail}\n{_api_error_hint(e.code, detail)}"
+    except TimeoutError:
+        return None, "Délai dépassé (30 s) : le serveur n'a pas répondu."
+    except urllib.error.URLError as e:
+        return None, f"Impossible de joindre {url} : {e.reason}"
+    except (KeyError, json.JSONDecodeError) as e:
+        return None, f"Réponse illisible : {e}"
+
+
+def pick_from_box(items, title, format_item):
+    """Affiche une liste sélectionnable par numéro (popup façon OpenCode)."""
+    lines = [format_item(i + 1, item) for i, item in enumerate(items)]
+    print(box(lines, title=title))
+    choice = input(f"  {UI.ACCENT}❯{UI.RESET} numéro : ").strip()
+    try:
+        return items[int(choice) - 1]
     except (ValueError, IndexError):
-        ui_error("Choix invalide : configuration annulée.")
+        return None
+
+
+def select_model():
+    """Commande /model : choix du fournisseur puis du modèle, étape par étape."""
+    cfg = load_config()
+    current_model = cfg.get("model", "")
+    current_provider = cfg.get("provider", "")
+
+    # ----- étape 1 : fournisseur -----
+    providers = list(AI_PROVIDERS.keys())
+    def fmt_provider(i, name):
+        marker = f"{UI.GREEN}●{UI.RESET} " if name == current_provider else "  "
+        models = AI_PROVIDERS[name]["models"]
+        hint = f"{UI.GREY}{models[0]} (+{len(models) - 1}){UI.RESET}" if models else ""
+        return f"{marker}{UI.ACCENT}{UI.BOLD}{i}{UI.RESET}. {UI.TEXT}{name:<28}{UI.RESET}{hint}"
+    print(box([f"{UI.TEXT}Étape 1/2 — choisissez le fournisseur{UI.RESET}"], title="/model"))
+    provider = pick_from_box(providers, "fournisseurs", fmt_provider)
+    if provider is None:
+        ui_error("Choix invalide : /model annulé.")
         return False
 
-    name, base_url, model = preset
+    info = AI_PROVIDERS[provider]
+    cfg["provider"] = provider
     print()
 
-    if name == "Google AI Studio (Gemini)":
-        ui_info(f"Clé gratuite sur {UI.RESET}{UI.TEXT}https://aistudio.google.com/apikey{UI.RESET}"
-                f"{UI.GREY} (Get API key → Create API key){UI.RESET}")
-        print()
+    # ----- étape 2 : modèle -----
+    LIST_MODELS = "📋 Lister les modèles autorisés par ma clé (API)"
+    OTHER_MODEL = "Autre modèle (à taper)"
 
-    cfg = load_config()
-    raw_key = getpass.getpass(f"  {UI.ACCENT}❯{UI.RESET} Clé API {UI.GREY}(entrée masquée, collez-la sans guillemets ni espaces){UI.RESET} : ")
-    # Nettoie la clé : espaces, guillemets accidentels lors du copier-coller
-    cfg["api_key"] = raw_key.strip().strip('"').strip("'").strip()
-    if not cfg["api_key"]:
-        ui_error("Clé API vide : configuration annulée.")
+    def fmt_model(i, model):
+        marker = f"{UI.GREEN}●{UI.RESET} " if model == current_model else "  "
+        return f"{marker}{UI.ACCENT}{UI.BOLD}{i}{UI.RESET}. {UI.TEXT}{model}{UI.RESET}"
+
+    print(box([f"{UI.TEXT}Étape 2/2 — choisissez le modèle{UI.RESET}"], title=provider))
+    choices = (info["models"] + [LIST_MODELS, OTHER_MODEL]) if info["models"] else [LIST_MODELS]
+    model = pick_from_box(choices, "modèles", fmt_model)
+    if model is None:
+        ui_error("Choix invalide : /model annulé.")
         return False
 
-    if base_url:
-        cfg["base_url"] = ask("Base URL", base_url)
-        cfg["model"] = ask("Modèle", model)
-    else:
-        cfg["base_url"] = ask("Base URL", "https://api.openai.com/v1")
-        cfg["model"] = ask("Modèle", "gpt-4o-mini")
+    if model == LIST_MODELS:
+        # Clé requise pour interroger le compte (demandée si absente)
+        api_key = os.environ.get("TILEGEN_API_KEY") or cfg.get("api_key")
+        if not api_key:
+            print()
+            if info["key_url"]:
+                ui_info(f"Clé sur {UI.RESET}{UI.TEXT}{info['key_url']}{UI.RESET}")
+            api_key = ask_secret(f"  {UI.ACCENT}❯{UI.RESET} Clé API {UI.GREY}(entrée masquée){UI.RESET} : ")
+            api_key = api_key.strip().strip('"').strip("'").strip()
+            if not api_key:
+                ui_error("Clé manquante : /model annulé.")
+                return False
+            cfg["api_key"] = api_key
+            print()
+
+        probe_url = (info["base_url"] or cfg.get("base_url") or "").rstrip("/")
+        if not probe_url:
+            probe_url = ask("Base URL")
+
+        ui_info("Interrogation de votre compte...")
+        models, error = fetch_models(api_key, probe_url)
+        if error:
+            lines = []
+            for j, part in enumerate(error.splitlines()):
+                color = UI.RED if j == 0 else UI.GREY
+                lines.extend(color + l + UI.RESET
+                             for l in textwrap.fill(part, width=72).splitlines())
+            print()
+            print(box(lines, title="liste des modèles · échec"))
+            return False
+        if not models:
+            ui_error("Votre compte n'a renvoyé aucun modèle conversationnel.")
+            return False
+
+        # Affiche au plus 20 modèles ; le reste accessible via "Autre modèle"
+        display = models[:20]
+        if len(models) > 20:
+            ui_info(f"{len(models)} modèles autorisés — 20 affichés, les autres via « Autre modèle »")
+        picked = pick_from_box(display + [OTHER_MODEL], f"{len(models)} modèles autorisés", fmt_model)
+        if picked is None:
+            ui_error("Choix invalide : /model annulé.")
+            return False
+        if picked == OTHER_MODEL:
+            picked = ask("Nom exact du modèle")
+            if not picked:
+                ui_error("Modèle vide : /model annulé.")
+                return False
+        model = picked
+
+    elif model == OTHER_MODEL:
+        model = ask("Nom exact du modèle")
+        if not model:
+            ui_error("Modèle vide : /model annulé.")
+            return False
+
+    cfg["model"] = model
+    print()
+
+    # ----- base URL (pré-remplie, modifiable) -----
+    default_url = info["base_url"] or cfg.get("base_url", "https://api.openai.com/v1")
+    cfg["base_url"] = ask("Base URL", default_url or "https://api.openai.com/v1")
+
+    # ----- clé API : demandée seulement si absente -----
+    if not (os.environ.get("TILEGEN_API_KEY") or cfg.get("api_key")):
+        print()
+        if info["key_url"]:
+            ui_info(f"Clé sur {UI.RESET}{UI.TEXT}{info['key_url']}{UI.RESET}")
+        raw_key = ask_secret(f"  {UI.ACCENT}❯{UI.RESET} Clé API {UI.GREY}(entrée masquée){UI.RESET} : ")
+        cfg["api_key"] = raw_key.strip().strip('"').strip("'").strip()
+        if not cfg["api_key"]:
+            ui_error("Clé manquante : utilisez /key plus tard.")
+    elif cfg.get("provider") != provider:
+        ui_info("Clé API conservée — si elle vient d'un autre fournisseur, changez-la avec /key.")
 
     save_config(cfg)
     print()
-    print(box([f"{UI.GREEN}Configuration enregistrée dans {CONFIG_FILE.name}.{UI.RESET}"],
-              title="terminé"))
-    print()
-
-    # Test immédiat de la connexion
-    if ask("Tester la connexion maintenant ?", "O").lower() in ("o", "oui", "y", "yes"):
-        ok, message = test_api(cfg)
-        print()
-        show_test_result(ok, message)
+    print(box([
+        f"{UI.GREEN}Modèle actif : {cfg['model']}{UI.RESET}",
+        f"{UI.GREY}{cfg['base_url']}{UI.RESET}",
+        f"{UI.GREY}Testez avec {UI.RESET}{UI.TEXT}/test{UI.RESET}{UI.GREY} · générez avec {UI.RESET}{UI.TEXT}/ai 10{UI.RESET}",
+    ], title="terminé"))
     return True
+
+
+def set_api_key():
+    """Commande /key : saisie ou remplacement de la clé API."""
+    cfg = load_config()
+    provider = cfg.get("provider", "")
+    key_url = AI_PROVIDERS.get(provider, {}).get("key_url", "")
+    if key_url:
+        ui_info(f"Clé {provider or 'du fournisseur'} sur {UI.RESET}{UI.TEXT}{key_url}{UI.RESET}")
+    raw_key = ask_secret(f"  {UI.ACCENT}❯{UI.RESET} Clé API {UI.GREY}(entrée masquée){UI.RESET} : ")
+    cfg["api_key"] = raw_key.strip().strip('"').strip("'").strip()
+    if not cfg["api_key"]:
+        ui_error("Clé vide : rien n'a changé.")
+        return False
+    save_config(cfg)
+    print()
+    print(box([f"{UI.GREEN}Clé API enregistrée dans {CONFIG_FILE.name}.{UI.RESET}",
+               f"{UI.GREY}Testez avec {UI.RESET}{UI.TEXT}/test{UI.RESET}"], title="terminé"))
+    return True
+
+
+def configure_ai():
+    """Compatibilité --configure-ai : délègue au sélecteur /model."""
+    return select_model()
 
 
 def _api_error_hint(code, detail):
@@ -491,12 +833,16 @@ def _api_error_hint(code, detail):
     if code == 401:
         return "Clé incorrecte ou expirée. Recréez une clé sur le site du fournisseur."
     if code == 404:
-        return "Base URL ou nom de modèle incorrect. Vérifiez-les dans « Configurer l'IA »."
+        return "Base URL ou nom de modèle incorrect. Vérifiez-les dans /model."
     if code == 429:
         return "Quota dépassé ou trop de requêtes. Attendez un peu ou vérifiez votre offre."
+    if code == 503 or "high demand" in detail_lower or "overload" in detail_lower:
+        return ("Le modèle est surchargé en ce moment : ce n'est NI votre clé NI votre "
+                "configuration. Réessayez dans quelques minutes, ou choisissez un autre "
+                "modèle avec /model (ex. gemini-flash-lite-latest).")
     if code == 400:
-        return "Requête refusée : vérifiez le nom du modèle et la clé dans « Configurer l'IA »."
-    return "Vérifiez la clé, la base URL et le modèle dans « Configurer l'IA »."
+        return "Requête refusée : vérifiez le nom du modèle et la clé dans /model."
+    return "Vérifiez la clé, la base URL et le modèle dans /model."
 
 
 def test_api(cfg=None):
@@ -536,6 +882,12 @@ def test_api(cfg=None):
         return False, f"Erreur {e.code} : {detail}\n{_api_error_hint(e.code, detail)}"
     except urllib.error.URLError as e:
         return False, f"Impossible de joindre {base_url} : {e.reason}"
+    except TimeoutError:
+        return False, ("Délai dépassé (30 s) : le serveur n'a pas répondu. "
+                       "Vérifiez votre connexion internet ou réessayez plus tard "
+                       "(le modèle est peut-être surchargé).")
+    except OSError as e:
+        return False, f"Problème réseau : {e}"
     except (KeyError, json.JSONDecodeError) as e:
         return False, f"Réponse inattendue de l'API : {e}"
 
@@ -547,7 +899,7 @@ def ai_generate_names(count, cfg):
     model = cfg.get("model") or "gpt-4o-mini"
 
     if not api_key:
-        ui_error("Aucune clé API configurée. Choisissez « Configurer l'IA » dans le menu.")
+        ui_error("Aucune clé API configurée. Tapez /model pour démarrer.")
         return None
 
     existing = ", ".join(sorted(EXISTING_NAMES)[:15]) + "..."
@@ -580,8 +932,24 @@ def ai_generate_names(count, cfg):
             content = json.loads(resp.read().decode("utf-8"))["choices"][0]["message"]["content"]
     except urllib.error.HTTPError as e:
         detail = " ".join(e.read().decode("utf-8", errors="replace").split())[:150]
-        ui_error(f"Erreur API {e.code} : {detail}")
-        ui_info("Vérifiez votre clé, votre base_url et votre modèle (menu « Configurer l'IA »).")
+        hint = _api_error_hint(e.code, detail)
+        message = textwrap.fill(f"Erreur API {e.code} : {detail}", width=72)
+        lines = [UI.RED + l + UI.RESET for l in message.splitlines()]
+        if hint:
+            lines.append("")
+            lines.extend(UI.GREY + l + UI.RESET for l in textwrap.fill(hint, width=72).splitlines())
+        print(box(lines, title="erreur IA"))
+        return None
+    except TimeoutError:
+        print(box([
+            f"{UI.RED}Délai dépassé (60 s) : le serveur n'a pas répondu.{UI.RESET}",
+            "",
+            f"{UI.GREY}Le modèle ({model}) est peut-être surchargé en ce moment.{UI.RESET}",
+            f"{UI.GREY}Réessayez, ou choisissez un autre modèle avec /model.{UI.RESET}",
+        ], title="erreur IA"))
+        return None
+    except OSError as e:
+        ui_error(f"Problème réseau : {e}")
         return None
     except (urllib.error.URLError, KeyError, json.JSONDecodeError) as e:
         ui_error(f"Impossible de joindre l'API : {e}")
@@ -625,23 +993,71 @@ def print_suggestions(suggestions):
     ui_results(suggestions, "local")
 
 # ============================================================
-#  Session interactive (page d'accueil façon OpenCode)
+#  Session interactive — console de commandes façon OpenCode
 # ============================================================
 
 def interactive_session():
     home_screen()
     generator = TileNameGenerator()
-    cfg = load_config()
+    last_suggestions = None
 
     while True:
-        choice = ui_menu()
+        raw = command_prompt()
 
-        if choice == "q":
+        if raw == "":
+            continue
+
+        # « / » seul : popup des commandes disponibles (façon OpenCode)
+        if raw == "/":
+            print()
+            _popup_suggestions(COMMAND_BASES)
+            continue
+
+        # Un simple nombre = /gen n (raccourci le plus utilisé)
+        if raw.isdigit():
+            raw = f"/gen {raw}"
+
+        parts = raw.split()
+        cmd = parts[0].lower()
+        arg = parts[1] if len(parts) > 1 else ""
+        cfg = load_config()
+
+        # ----- /exit, /quit -----
+        if cmd in ("/exit", "/quit", "/q"):
             print(f"\n{UI.GREY}À bientôt — TileGen v{VERSION}{UI.RESET}\n")
             break
 
-        elif choice == "1":
-            count = ask_count()
+        # ----- /help -----
+        elif cmd in ("/help", "/?"):
+            show_help()
+
+        # ----- /model -----
+        elif cmd == "/model":
+            print()
+            select_model()
+
+        # ----- /key -----
+        elif cmd == "/key":
+            print()
+            set_api_key()
+
+        # ----- /test -----
+        elif cmd == "/test":
+            print()
+            ui_info("Test de la connexion IA en cours...")
+            ok, message = test_api(cfg)
+            print()
+            show_test_result(ok, message)
+
+        # ----- /gen [n] -----
+        elif cmd == "/gen":
+            try:
+                count = int(arg) if arg else 20
+                if not 1 <= count <= 100:
+                    raise ValueError
+            except ValueError:
+                ui_error("Usage : /gen [nombre entre 1 et 100]  — ex. /gen 10")
+                continue
             print()
             try:
                 suggestions = generator.generate_multiple_names(count)
@@ -651,10 +1067,17 @@ def interactive_session():
             print()
             ui_results(suggestions, "local")
             ui_footer(len(suggestions), "local", GENERATED_NAMES_FILE)
-            post_generation(suggestions)
+            last_suggestions = suggestions
 
-        elif choice == "2":
-            count = ask_count()
+        # ----- /ai [n] -----
+        elif cmd == "/ai":
+            try:
+                count = int(arg) if arg else 20
+                if not 1 <= count <= 100:
+                    raise ValueError
+            except ValueError:
+                ui_error("Usage : /ai [nombre entre 1 et 100]  — ex. /ai 10")
+                continue
             print()
             ui_info("Génération via l'IA en cours...")
             suggestions = ai_generate_names(count, cfg)
@@ -665,30 +1088,42 @@ def interactive_session():
                 print()
                 ui_results(suggestions, "IA")
                 ui_footer(len(suggestions), "IA", GENERATED_NAMES_FILE)
-                post_generation(suggestions)
+                last_suggestions = suggestions
 
-        elif choice == "3":
-            print()
-            configure_ai()
-            cfg = load_config()
-            input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
+        # ----- /export -----
+        elif cmd == "/export":
+            if not last_suggestions:
+                ui_error("Rien à exporter : générez d'abord des noms avec /gen ou /ai.")
+            else:
+                print()
+                filepath = ask("Nom du fichier", "catalogue.csv")
+                export_to_csv(last_suggestions, filepath)
 
-        elif choice == "4":
-            print()
-            ui_info("Test de la connexion IA en cours...")
-            ok, message = test_api(cfg)
-            print()
-            show_test_result(ok, message)
-            input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
-
-        elif choice == "5":
+        # ----- /reset -----
+        elif cmd == "/reset":
             generator.reset_history()
             print()
             print(box([f"{UI.GREEN}Historique des noms générés effacé.{UI.RESET}"], title="terminé"))
-            input(f"\n  {UI.GREY}Entrée pour revenir au menu...{UI.RESET}")
 
+        # ----- /clear -----
+        elif cmd == "/clear":
+            home_screen()
+
+        # ----- commande inconnue -----
         else:
-            ui_error("Choix invalide : tapez 1, 2, 3, 4, 5 ou q.")
+            lines = [f"{UI.RED}Commande inconnue : {cmd}{UI.RESET}"]
+            # Suggestions : commandes commençant par ce qui a été tapé
+            close = [c for c in COMMAND_BASES if c.startswith(cmd)]
+            if close:
+                lines.append("")
+                lines.append(f"{UI.GREY}Vouliez-vous dire :{UI.RESET}")
+                lines.extend(f"  {UI.ACCENT}{UI.BOLD}{c:<9}{UI.RESET}"
+                             f"{UI.GREY}{COMMAND_DESCRIPTIONS[c]}{UI.RESET}"
+                             for c in close)
+            else:
+                lines.append(f"{UI.GREY}Tapez {UI.RESET}{UI.TEXT}/help{UI.RESET}"
+                             f"{UI.GREY} pour la liste des commandes.{UI.RESET}")
+            print(box(lines, title="erreur"))
 
 # ============================================================
 #  Point d'entrée
