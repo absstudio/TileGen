@@ -427,7 +427,8 @@ function runCommand(raw) {
     case "/theme":  toggleTheme(); return;
     case "/reset":  runReset(); return;
     case "/clear":  out.innerHTML = ""; return;
-    case "/help":   runHelp(); return;
+    case "/help":
+    case "/":       runHelp(); return;   /* « / » seul = aide */
     default:
       const close = COMMANDS.filter(c => c.cmd.startsWith(cmd.toLowerCase()));
       if (close.length) {
